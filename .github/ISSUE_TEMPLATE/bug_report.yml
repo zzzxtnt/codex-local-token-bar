@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a problem with Codex Token Bar
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Codex Token Bar. Never attach raw Codex session logs. They may contain prompts, responses, paths, and account details.
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+      placeholder: 0.1.0-beta.1 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: macOS version, Mac architecture, Codex version
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: Include the expected total or behavior without private session content.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: Include the observed total, timing, and any sanitized error message.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Sanitized reproduction
+      description: Prefer a small synthetic JSONL fixture. Remove prompts, responses, usernames, account details, and absolute paths.
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I have not included raw session logs, credentials, prompts, responses, or personal paths.
+          required: true
