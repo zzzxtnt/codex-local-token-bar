@@ -13,7 +13,7 @@ Build, sign, notarize, staple, and package a universal macOS release.
 
 Required environment variables:
   RELEASE_VERSION     Release label without a leading "v", for example
-                      0.1.0-beta.2.
+                      0.1.0.
   BUILD_NUMBER        Numeric CFBundleVersion, for example 2.
   SIGNING_IDENTITY    Full Developer ID Application identity as shown by
                       `security find-identity -v -p codesigning`.
@@ -28,8 +28,8 @@ Optional environment variables:
   KEEP_RELEASE_WORK_DIR Set to 1 to retain intermediate files for debugging.
 
 Example:
-  RELEASE_VERSION=0.1.0-beta.2 \
-  BUILD_NUMBER=2 \
+  RELEASE_VERSION=0.1.0 \
+  BUILD_NUMBER=1 \
   SIGNING_IDENTITY="Developer ID Application: Example (TEAMID)" \
   NOTARY_PROFILE=codex-token-bar \
   ./scripts/release-macos.sh

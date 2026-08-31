@@ -2,9 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.1.0-beta.2 — 2026-08-31
+## 0.1.0 — 2026-08-31
 
-- Publish the first downloadable Universal 2 macOS disk image.
+- Publish the first stable downloadable Universal 2 macOS disk image.
 - Sign releases with Developer ID, enable Hardened Runtime, and notarize them
   with Apple for normal Gatekeeper installation.
 - Add a SHA-256 checksum, end-user installation and removal instructions, and

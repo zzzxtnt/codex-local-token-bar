@@ -12,7 +12,7 @@ body:
     id: version
     attributes:
       label: App version or commit
-      placeholder: 0.1.0-beta.2 or commit SHA
+      placeholder: 0.1.0 or commit SHA
     validations:
       required: true
   - type: input

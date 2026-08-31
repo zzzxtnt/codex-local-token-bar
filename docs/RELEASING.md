@@ -6,7 +6,7 @@ users should follow [INSTALL.md](INSTALL.md).
 ## Release requirements
 
 - A clean checkout of the release commit
-- A version tag such as `v0.1.0-beta.2`
+- A version tag such as `v0.1.0`
 - Xcode and the Swift toolchain used by the project
 - A valid `Developer ID Application` certificate in the signing Keychain
 - Apple notarization credentials configured for `notarytool`
@@ -43,8 +43,8 @@ Then create the complete release. `RELEASE_VERSION` must not include the
 leading `v` used by the Git tag:
 
 ```sh
-RELEASE_VERSION=0.1.0-beta.2 \
-BUILD_NUMBER=2 \
+RELEASE_VERSION=0.1.0 \
+BUILD_NUMBER=1 \
 SIGNING_IDENTITY="Developer ID Application: Your Organization (TEAMID)" \
 NOTARY_PROFILE=codex-token-bar \
 ./scripts/release-macos.sh
@@ -76,7 +76,7 @@ Run these checks against the exact `.dmg` that will be uploaded. Replace the
 example path with the real release asset:
 
 ```sh
-DMG_PATH="dist/CodexTokenBar-v0.1.0-beta.2-universal.dmg"
+DMG_PATH="dist/CodexTokenBar-v0.1.0-universal.dmg"
 hdiutil verify "$DMG_PATH"
 xcrun stapler validate "$DMG_PATH"
 spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG_PATH"
