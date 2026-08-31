@@ -26,13 +26,15 @@ Bar does not copy the session files or persist their contents in its own databas
 ## Network and telemetry
 
 The app contains no network client, analytics SDK, crash reporter, advertising,
-or telemetry. It does not upload session data or usage totals.
+automatic updater, or telemetry. It does not upload session data or usage totals.
+Users check GitHub Releases for updates manually; the app does not contact GitHub.
 
 ## Local storage
 
 The app does not maintain a usage database. macOS may retain the app's Login Item
 registration when the user enables “Launch at Login”; that state is managed by
-macOS Service Management.
+macOS Service Management. Uninstalling the app does not remove or modify files
+under `~/.codex`.
 
 ## Tests
 

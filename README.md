@@ -22,6 +22,19 @@ another dashboard open.
 The app runs as a menu bar accessory, does not show a Dock icon, and provides an
 opt-in switch for starting automatically when you sign in to macOS.
 
+## Install a release
+
+1. Open [GitHub Releases](https://github.com/zzzxtnt/codex-local-token-bar/releases)
+   and download the `.dmg` from the newest release that includes one.
+2. Open the disk image and drag **Codex Token Bar** into **Applications**.
+3. Eject the disk image, then open Codex Token Bar from Applications. The token
+   total appears in the right side of the macOS menu bar; the app has no Dock icon.
+
+Public app downloads are signed with Developer ID and notarized by Apple. If a
+release is marked source-only, it does not contain an installable app. See the
+[installation guide](docs/INSTALL.md) for checksum verification, Gatekeeper
+troubleshooting, Launch at Login, updating, and uninstalling.
+
 ## What “today's total” means
 
 Codex Token Bar follows the Codex session-usage rules adapted from
@@ -51,6 +64,9 @@ meter, subscription quota, or remaining-credit counter.
 Codex session files can contain sensitive content. This app processes the files
 on your Mac and does not copy or upload them.
 
+The app has no automatic updater. Checking GitHub for a newer version is a
+manual action and is not performed by the app.
+
 ## Requirements
 
 - macOS 13 or later
@@ -64,7 +80,7 @@ on your Mac and does not copy or upload them.
 git clone https://github.com/zzzxtnt/codex-local-token-bar.git
 cd codex-local-token-bar
 swift test
-./scripts/build-app.sh
+zsh scripts/build-app.sh
 open "dist/Codex Token Bar.app"
 ```
 
@@ -77,6 +93,7 @@ open "/Applications/Codex Token Bar.app"
 
 The local build script uses an ad-hoc signature. A downloadable public binary
 should instead be signed with a Developer ID certificate and notarized by Apple.
+The generated executable targets the architecture of the Mac that builds it.
 
 ## Development
 
@@ -107,6 +124,10 @@ the expected total, the observed total, macOS version, and Codex version. Do not
 attach raw session logs unless you have removed prompts, messages, paths, account
 details, and other private data.
 
+Maintainers can follow the signed-release checklist in
+[docs/RELEASING.md](docs/RELEASING.md). It covers tests, Developer ID signing,
+notarization, stapling, checksums, Gatekeeper checks, and GitHub release assets.
+
 ## License and attribution
 
 Codex Token Bar is available under the [MIT License](LICENSE).
@@ -126,3 +147,10 @@ Codex Token Bar 是一个原生 macOS 菜单栏应用，从本机 `~/.codex` 会
 
 应用完全在本机运行，不读取认证信息、不上传日志、没有遥测。菜单栏数字是本机
 活动统计，不代表账单、订阅剩余额度或 API 费用。
+
+安装时请从 [Releases](https://github.com/zzzxtnt/codex-local-token-bar/releases)
+下载 `CodexTokenBar-v<版本>-universal.dmg` 和 `SHA256SUMS.txt`，把应用拖入
+“应用程序”后再打开。菜单栏面板里的“登录时自动启动”可以设置开机自启；卸载前
+先关闭该选项并退出应用，再把应用移到废纸篓。若 Gatekeeper 拦截，请重新从本仓库
+下载并核对校验值，不要关闭 Gatekeeper 或移除隔离属性。完整步骤见
+[安装与卸载说明](docs/INSTALL.md)。

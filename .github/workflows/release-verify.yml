@@ -1,0 +1,107 @@
+name: Verify release assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Download release assets
+        run: |
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir release-assets
+
+      - name: Verify checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          checksum_file="$(find release-assets -maxdepth 1 -type f \
+            \( -name 'SHA256SUMS' -o -name 'SHA256SUMS.txt' \) -print -quit)"
+          if [[ -z "$checksum_file" ]]; then
+            echo "Release must contain SHA256SUMS or SHA256SUMS.txt" >&2
+            exit 1
+          fi
+          (
+            cd release-assets
+            shasum -a 256 -c "$(basename "$checksum_file")"
+          )
+
+      - name: Locate disk image
+        id: asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmg_files=(release-assets/*.dmg)
+          if [[ ${#dmg_files[@]} -ne 1 ]]; then
+            echo "Expected exactly one .dmg release asset; found ${#dmg_files[@]}" >&2
+            exit 1
+          fi
+          echo "dmg=${dmg_files[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify disk image and app
+        shell: bash
+        env:
+          DMG_PATH: ${{ steps.asset.outputs.dmg }}
+        run: |
+          set -euo pipefail
+          hdiutil verify "$DMG_PATH"
+          codesign --verify --strict --verbose=2 "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
+          spctl --assess --type open --context context:primary-signature \
+            --verbose=4 "$DMG_PATH"
+
+          mount_dir="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$mount_dir" || true
+            rmdir "$mount_dir" || true
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "$DMG_PATH" -nobrowse -readonly -mountpoint "$mount_dir"
+          app_path="$mount_dir/Codex Token Bar.app"
+          executable="$app_path/Contents/MacOS/CodexTokenBar"
+          plist="$app_path/Contents/Info.plist"
+
+          test -d "$app_path"
+          test -x "$executable"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          signature="$(codesign --display --verbose=4 "$app_path" 2>&1)"
+          grep -q '^Authority=Developer ID Application:' <<< "$signature"
+          grep -Eq '^CodeDirectory .*flags=.*\(runtime\)' <<< "$signature"
+          grep -q '^Timestamp=' <<< "$signature"
+          grep -Eq '^TeamIdentifier=[A-Z0-9]{10}$' <<< "$signature"
+          xcrun stapler validate "$app_path"
+          spctl --assess --type execute --verbose=4 "$app_path"
+
+          archs="$(lipo -archs "$executable")"
+          grep -qw arm64 <<< "$archs"
+          grep -qw x86_64 <<< "$archs"
+
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" \
+            = 'io.github.zzzxtnt.codexlocaltokenbar'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" \
+            = '13.0'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$plist")" \
+            = 'true'
+
+          codesign --display --verbose=4 "$app_path"
+          echo "Architectures: $archs"
+          echo "Bundle version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+          echo "Build number: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")"
