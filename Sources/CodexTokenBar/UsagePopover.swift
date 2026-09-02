@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct UsagePopover: View {
@@ -69,6 +70,8 @@ struct UsagePopover: View {
                 MiniMetric(title: "今日输出", value: TokenFormatter.compact(usage.todayTotal.outputTokens ?? 0))
                 MiniMetric(title: "当前会话", value: TokenFormatter.compact(usage.sessionTotal.normalizedTotal))
             }
+
+            CacheHitProgress(tokens: usage.todayTotal)
 
             if let contextWindow = usage.contextWindow {
                 HStack {
@@ -153,6 +156,46 @@ struct UsagePopover: View {
             }
         }
         .controlSize(.small)
+    }
+}
+
+private struct CacheHitProgress: View {
+    let tokens: TokenCounts
+
+    private var percentage: Double {
+        min(100, max(0, tokens.cacheHitRate * 100))
+    }
+
+    private var percentageLabel: String {
+        String(format: percentage >= 99.95 ? "%.0f%%" : "%.1f%%", percentage)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("缓存命中率")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(percentageLabel)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.green)
+                    .monospacedDigit()
+            }
+            .font(.caption)
+
+            ProgressView(value: percentage, total: 100)
+                .tint(.green)
+
+            Text(
+                "缓存命中 \(TokenFormatter.exact(tokens.cachedInputTokens ?? 0)) / "
+                    + "输入 \(TokenFormatter.exact(tokens.inputTokens ?? 0)) tokens"
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("今日缓存命中率")
+        .accessibilityValue(percentageLabel)
     }
 }
 

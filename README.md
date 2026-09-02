@@ -15,6 +15,7 @@ another dashboard open.
 
 - Today's total token usage across all local Codex sessions
 - Today's valid request count, input tokens, and output tokens
+- Today's cache hit rate with a progress bar and exact cached/input counts
 - The current session total and the latest recorded event
 - Rate-limit windows when Codex includes them in the local log
 - A compact, automatically refreshed value in the macOS menu bar
@@ -49,6 +50,8 @@ Codex Token Bar follows the Codex session-usage rules adapted from
 4. Sum valid events whose timestamps fall inside the current local calendar day.
 5. Count Codex input only once. Cached input is already included in
    `input_tokens`, so the headline total is `input + output`.
+6. Calculate cache hit rate as `cached_input_tokens / input_tokens`, matching
+   CC Switch's cache-read / cacheable-input definition for Codex data.
 
 This number is a local activity estimate. It is **not** an invoice, API billing
 meter, subscription quota, or remaining-credit counter.
@@ -143,7 +146,8 @@ Privacy and vulnerability-reporting details are in [PRIVACY.md](PRIVACY.md) and
 
 Codex Token Bar 是一个原生 macOS 菜单栏应用，从本机 `~/.codex` 会话日志中
 统计当天全部 Codex 会话的 token 使用量。它会处理重复快照、子任务继承回放和
-归档副本去重，并避免把 cached input 重复计入总量。
+归档副本去重，并避免把 cached input 重复计入总量；面板还会显示当天缓存命中率
+进度条及缓存命中与输入 token 的精确数量。
 
 应用完全在本机运行，不读取认证信息、不上传日志、没有遥测。菜单栏数字是本机
 活动统计，不代表账单、订阅剩余额度或 API 费用。

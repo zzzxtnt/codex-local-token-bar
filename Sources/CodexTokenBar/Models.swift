@@ -17,6 +17,14 @@ struct TokenCounts: Codable, Hashable, Sendable {
         totalTokens ?? (inputTokens ?? 0) + (outputTokens ?? 0)
     }
 
+    /// Codex reports cached input as a subset of input_tokens.
+    /// This matches CC Switch's cache-read / cacheable-input definition.
+    var cacheHitRate: Double {
+        guard let inputTokens, inputTokens > 0 else { return 0 }
+        let cached = min(cachedInputTokens ?? 0, inputTokens)
+        return Double(cached) / Double(inputTokens)
+    }
+
     static let zero = TokenCounts(
         inputTokens: 0,
         cachedInputTokens: 0,

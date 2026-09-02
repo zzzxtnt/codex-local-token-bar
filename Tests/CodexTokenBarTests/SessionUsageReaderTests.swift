@@ -17,6 +17,7 @@ struct SessionUsageReaderTests {
         #expect(snapshot.sessionTotal.normalizedTotal == 350)
         #expect(snapshot.lastRequest?.normalizedTotal == 230)
         #expect(snapshot.lastRequest?.cachedInputTokens == 160)
+        #expect(snapshot.lastRequest?.cacheHitRate == 0.8)
         #expect(snapshot.rateLimits?.primary?.usedPercent == 12)
         #expect(snapshot.rateLimits?.primary?.durationSeconds == 18_000)
     }
@@ -57,16 +58,16 @@ struct SessionUsageReaderTests {
         let otherID = "33333333-3333-4333-8333-333333333333"
         let parentEvents = [
             sessionMeta(id: parentID, timestamp: "2026-08-29T02:00:00Z"),
-            tokenEvent(totalInput: 100, cached: 70, output: 10, lastInput: 100, lastOutput: 10, timestamp: "2026-08-29T02:01:00Z"),
-            tokenEvent(totalInput: 100, cached: 70, output: 10, lastInput: 100, lastOutput: 10, timestamp: "2026-08-29T02:01:01Z"),
-            tokenEvent(totalInput: 150, cached: 100, output: 15, lastInput: 50, lastOutput: 5, timestamp: "2026-08-29T02:02:00Z"),
+            tokenEvent(totalInput: 100, cached: 70, output: 10, lastInput: 100, lastCached: 70, lastOutput: 10, timestamp: "2026-08-29T02:01:00Z"),
+            tokenEvent(totalInput: 100, cached: 70, output: 10, lastInput: 100, lastCached: 70, lastOutput: 10, timestamp: "2026-08-29T02:01:01Z"),
+            tokenEvent(totalInput: 150, cached: 100, output: 15, lastInput: 50, lastCached: 30, lastOutput: 5, timestamp: "2026-08-29T02:02:00Z"),
         ]
         let childEvents = [
             sessionMeta(id: childID, parentID: parentID, timestamp: "2026-08-29T02:03:00Z"),
-            tokenEvent(totalInput: 100, cached: 70, output: 10, lastInput: 100, lastOutput: 10, timestamp: "2026-08-29T02:03:01Z"),
-            tokenEvent(totalInput: 100, cached: 70, output: 10, lastInput: 100, lastOutput: 10, timestamp: "2026-08-29T02:03:02Z"),
-            tokenEvent(totalInput: 150, cached: 100, output: 15, lastInput: 50, lastOutput: 5, timestamp: "2026-08-29T02:03:03Z"),
-            tokenEvent(totalInput: 190, cached: 125, output: 19, lastInput: 40, lastOutput: 4, timestamp: "2026-08-29T02:04:00Z"),
+            tokenEvent(totalInput: 100, cached: 70, output: 10, lastInput: 100, lastCached: 70, lastOutput: 10, timestamp: "2026-08-29T02:03:01Z"),
+            tokenEvent(totalInput: 100, cached: 70, output: 10, lastInput: 100, lastCached: 70, lastOutput: 10, timestamp: "2026-08-29T02:03:02Z"),
+            tokenEvent(totalInput: 150, cached: 100, output: 15, lastInput: 50, lastCached: 30, lastOutput: 5, timestamp: "2026-08-29T02:03:03Z"),
+            tokenEvent(totalInput: 190, cached: 125, output: 19, lastInput: 40, lastCached: 25, lastOutput: 4, timestamp: "2026-08-29T02:04:00Z"),
         ]
         let cumulativeOnlyEvents = [
             sessionMeta(id: otherID, timestamp: "2026-08-29T03:00:00Z"),
@@ -92,10 +93,27 @@ struct SessionUsageReaderTests {
         // informational and must not be added to the headline total.
         #expect(snapshot.todayTotal.normalizedTotal == 242)
         #expect(snapshot.todayTotal.inputTokens == 220)
+        #expect(snapshot.todayTotal.cachedInputTokens == 140)
+        #expect(snapshot.todayTotal.cacheHitRate == 140.0 / 220.0)
         #expect(snapshot.todayTotal.outputTokens == 22)
         #expect(snapshot.todayRequestCount == 5)
         #expect(snapshot.scannedFileCount == 4)
         #expect(snapshot.deferredFileCount == 0)
+    }
+
+    @Test func cacheHitRateHandlesEmptyAndMalformedCounts() {
+        let empty = TokenCounts.zero
+        #expect(empty.cacheHitRate == 0)
+
+        let oversizedCache = TokenCounts(
+            inputTokens: 100,
+            cachedInputTokens: 140,
+            cacheWriteInputTokens: nil,
+            outputTokens: 0,
+            reasoningOutputTokens: nil,
+            totalTokens: 100
+        )
+        #expect(oversizedCache.cacheHitRate == 1)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["CODEX_TOKEN_BAR_LIVE_TEST"] == "1"))
@@ -105,6 +123,8 @@ struct SessionUsageReaderTests {
         print(
             "LIVE_SNAPSHOT today_total=\(snapshot.todayTotal.normalizedTotal) "
                 + "requests=\(snapshot.todayRequestCount) "
+                + "cached_input=\(snapshot.todayTotal.cachedInputTokens ?? 0) "
+                + "cache_hit=\(String(format: "%.1f%%", snapshot.todayTotal.cacheHitRate * 100)) "
                 + "session_total=\(snapshot.sessionTotal.normalizedTotal) "
                 + "last_request=\(snapshot.lastRequest?.normalizedTotal ?? 0) "
                 + "file=\(snapshot.sourceFile.lastPathComponent)"
@@ -122,12 +142,13 @@ struct SessionUsageReaderTests {
         cached: UInt64,
         output: UInt64,
         lastInput: UInt64? = nil,
+        lastCached: UInt64? = nil,
         lastOutput: UInt64? = nil,
         timestamp: String
     ) -> String {
         let last: String
         if let lastInput, let lastOutput {
-            last = ",\"last_token_usage\":{\"input_tokens\":\(lastInput),\"cached_input_tokens\":0,\"output_tokens\":\(lastOutput),\"total_tokens\":\(lastInput + lastOutput)}"
+            last = ",\"last_token_usage\":{\"input_tokens\":\(lastInput),\"cached_input_tokens\":\(lastCached ?? 0),\"output_tokens\":\(lastOutput),\"total_tokens\":\(lastInput + lastOutput)}"
         } else {
             last = ""
         }
