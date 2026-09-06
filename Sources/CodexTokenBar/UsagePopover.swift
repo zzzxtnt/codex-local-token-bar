@@ -3,6 +3,7 @@ import SwiftUI
 
 struct UsagePopover: View {
     @ObservedObject var model: UsageModel
+    var onClose: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -52,6 +53,12 @@ struct UsagePopover: View {
             if model.isRefreshing {
                 ProgressView().controlSize(.small)
             }
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .help("关闭面板（Esc）")
+            .accessibilityLabel("关闭面板")
         }
     }
 

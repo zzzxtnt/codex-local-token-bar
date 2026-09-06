@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.2 — 2026-09-06
+
+- Fix popover dismissal on outside clicks, app switching, Escape, and repeated
+  status-button clicks. Add an explicit close button and clean up event monitors.
+
 ## 0.1.1 — 2026-09-02
 
 - Add a CC Switch-compatible cache hit rate progress bar with exact cached and

@@ -14,11 +14,13 @@ struct CodexTokenBarApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let model = UsageModel()
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var observations = Set<AnyCancellable>()
+    private var localEventMonitor: Any?
+    private var globalEventMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -27,10 +29,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
         configureButton(item.button)
 
-        popover.behavior = .transient
-        popover.animates = true
+        // Own dismissal so a status-button click cannot auto-close on mouse-down
+        // and then reopen the same popover on mouse-up.
+        popover.behavior = .applicationDefined
+        popover.animates = false
+        popover.delegate = self
         popover.contentSize = NSSize(width: 350, height: 430)
-        popover.contentViewController = NSHostingController(rootView: UsagePopover(model: model))
+        popover.contentViewController = NSHostingController(rootView: UsagePopover(
+            model: model,
+            onClose: { [weak self] in self?.closePopover() }
+        ))
 
         model.$localUsage
             .receive(on: RunLoop.main)
@@ -67,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePopover(_ sender: Any?) {
         if popover.isShown {
-            popover.performClose(sender)
+            closePopover()
         } else {
             showPopover()
         }
@@ -75,7 +83,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPopover() {
         guard let button = statusItem?.button, !popover.isShown else { return }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApplication.shared.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        installDismissalMonitors()
+    }
+
+    private func installDismissalMonitors() {
+        removeDismissalMonitors()
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]
+        ) { [weak self] event in
+            guard let self, self.popover.isShown else { return event }
+            if event.type == .keyDown {
+                if event.keyCode == 53 {
+                    self.closePopover()
+                    return nil
+                }
+            } else if event.window !== self.popover.contentViewController?.view.window {
+                // Leave status-button events for togglePopover, including mouse-up.
+                if let button = self.statusItem?.button,
+                   event.window === button.window,
+                   button.bounds.contains(button.convert(event.locationInWindow, from: nil)) {
+                    return event
+                }
+                self.closePopover()
+            }
+            return event
+        }
+        // Mouse-only monitoring needs no keyboard or accessibility permission.
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            self?.closePopover()
+        }
+    }
+
+    private func closePopover() {
+        removeDismissalMonitors()
+        if popover.isShown { popover.close() }
+    }
+
+    private func removeDismissalMonitors() {
+        if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
+        if let globalEventMonitor { NSEvent.removeMonitor(globalEventMonitor) }
+        localEventMonitor = nil
+        globalEventMonitor = nil
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        removeDismissalMonitors()
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        closePopover()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        removeDismissalMonitors()
     }
 }
