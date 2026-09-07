@@ -17,7 +17,8 @@ another dashboard open.
 - Today's valid request count, input tokens, and output tokens
 - Today's cache hit rate with a progress bar and exact cached/input counts
 - The current session total and the latest recorded event
-- Rate-limit windows when Codex includes them in the local log
+- Ordinary Codex rate-limit windows from the latest matching local quota record,
+  independently of Spark quotas and token events, with the record time shown
 - A compact, automatically refreshed value in the macOS menu bar
 
 The app runs as a menu bar accessory, does not show a Dock icon, and provides an
@@ -116,7 +117,8 @@ to build or run the app.
 ## Known limitations
 
 - Codex's local JSONL format is not a public stable API and may change.
-- Rate-limit details appear only when the latest Codex event contains them.
+- Rate-limit details require local quota records. Spark records are excluded;
+  expired windows show a waiting message until Codex records a fresh snapshot.
 - The current UI is localized in Simplified Chinese.
 - Source builds are not automatically notarized.
 

@@ -130,7 +130,8 @@ struct SessionUsageReader: Sendable {
             lastRequest: latest.lastRequest,
             contextWindow: latest.contextWindow,
             rateLimits: latest.rateLimits,
-            sourceFile: latest.sourceFile
+            sourceFile: latest.sourceFile,
+            quotaTimestamp: latest.quotaTimestamp
         )
     }
 
@@ -151,46 +152,32 @@ struct SessionUsageReader: Sendable {
         }
 
         guard let latest else { throw UsageError.noTokenEvents }
-        return latest
+        // Quota updates can have info=null and can follow a different model's
+        // token snapshot. Select the ordinary Codex bucket independently.
+        var quota: QuotaSnapshot?
+        for file in candidates {
+            if let quota, modificationDate(for: file) < quota.timestamp { break }
+            let record = try reverseRecord(in: file) { data in
+                decodeLatestQuota(from: data)
+            }
+            if let record, quota == nil || record.timestamp > quota!.timestamp {
+                quota = record
+            }
+        }
+        return LocalUsageSnapshot(
+            timestamp: latest.timestamp,
+            sessionTotal: latest.sessionTotal,
+            lastRequest: latest.lastRequest,
+            contextWindow: latest.contextWindow,
+            rateLimits: quota?.limits,
+            sourceFile: latest.sourceFile,
+            quotaTimestamp: quota?.timestamp
+        )
     }
 
     private func candidateFiles(now: Date) throws -> [URL] {
-        let fileManager = FileManager.default
-        let calendar = Calendar.current
-        let dateDirectories = [0, -1, -2].compactMap { dayOffset -> URL? in
-            guard let date = calendar.date(byAdding: .day, value: dayOffset, to: now) else { return nil }
-            let components = calendar.dateComponents([.year, .month, .day], from: date)
-            guard let year = components.year, let month = components.month, let day = components.day else {
-                return nil
-            }
-            return sessionsRoot
-                .appendingPathComponent(String(format: "%04d", year), isDirectory: true)
-                .appendingPathComponent(String(format: "%02d", month), isDirectory: true)
-                .appendingPathComponent(String(format: "%02d", day), isDirectory: true)
-        }
-
-        var files: [URL] = []
-        for directory in dateDirectories where fileManager.fileExists(atPath: directory.path) {
-            let urls = try fileManager.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            )
-            files.append(contentsOf: urls.filter { $0.pathExtension == "jsonl" })
-        }
-
-        if files.isEmpty {
-            let enumerator = fileManager.enumerator(
-                at: sessionsRoot,
-                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            )
-            while let file = enumerator?.nextObject() as? URL {
-                if file.pathExtension == "jsonl" { files.append(file) }
-            }
-        }
-
-        return files.sorted {
+        // Folder dates describe session creation, not its latest activity.
+        try allSessionFiles().sorted {
             modificationDate(for: $0) > modificationDate(for: $1)
         }
     }
@@ -218,6 +205,12 @@ struct SessionUsageReader: Sendable {
     }
 
     private func latestTokenEvent(in file: URL) throws -> LocalUsageSnapshot? {
+        try reverseRecord(in: file) { data in
+            decodeLatestTokenEvent(from: data, sourceFile: file)
+        }
+    }
+
+    private func reverseRecord<T>(in file: URL, decode: (Data) -> T?) throws -> T? {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
 
@@ -237,11 +230,25 @@ struct SessionUsageReader: Sendable {
             buffer = chunk + buffer
             scanned += UInt64(chunk.count)
 
-            if let snapshot = decodeLatestTokenEvent(from: buffer, sourceFile: file) {
+            if let snapshot = decode(buffer) {
                 return snapshot
             }
         }
 
+        return nil
+    }
+
+    func decodeLatestQuota(from data: Data) -> QuotaSnapshot? {
+        for line in data.split(separator: 0x0A).reversed() {
+            let bytes = Data(line)
+            guard bytes.range(of: Data("\"rate_limits\"".utf8)) != nil,
+                  let event = try? CodexJSON.decoder.decode(CodexLogEvent.self, from: bytes),
+                  event.type == "event_msg", event.payload?.type == "token_count",
+                  let limits = event.payload?.rateLimits, limits.isCodexQuota,
+                  let timestamp = CodexJSON.parseDate(event.timestamp)
+            else { continue }
+            return QuotaSnapshot(timestamp: timestamp, limits: limits)
+        }
         return nil
     }
 

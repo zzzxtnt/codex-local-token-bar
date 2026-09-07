@@ -95,8 +95,13 @@ struct UsagePopover: View {
     @ViewBuilder
     private var quotaSection: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text("订阅额度")
+            Text("Codex 订阅额度")
                 .font(.subheadline.weight(.semibold))
+            if let timestamp = model.localUsage?.quotaTimestamp {
+                Text("额度记录 \(timestamp.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
             if model.effectivePrimaryWindow == nil && model.effectiveSecondaryWindow == nil {
                 Text("当前日志没有额度快照")
@@ -250,17 +255,32 @@ private struct QuotaRow: View {
     let fallbackName: String
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            quotaBody(now: context.date)
+        }
+    }
+
+    private func quotaBody(now: Date) -> some View {
         let used = max(0, min(100, window.usedPercent ?? 0))
-        VStack(alignment: .leading, spacing: 4) {
+        let expired = window.resetDate.map { $0 <= now } ?? false
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(windowName)
                 Spacer()
-                Text("已用 \(used, specifier: "%.0f")%")
-                    .monospacedDigit()
+                if expired {
+                    Text("已重置，等待新记录")
+                } else if window.usedPercent == nil {
+                    Text("暂无用量记录")
+                } else {
+                    Text("已用 \(used, specifier: "%.0f")%")
+                        .monospacedDigit()
+                }
             }
             .font(.caption)
-            ProgressView(value: used, total: 100)
-                .tint(color(for: used))
+            if !expired && window.usedPercent != nil {
+                ProgressView(value: used, total: 100)
+                    .tint(color(for: used))
+            }
             if let reset = window.resetDate {
                 Text("重置时间 \(reset.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption2)

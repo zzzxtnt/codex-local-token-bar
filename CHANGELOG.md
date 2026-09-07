@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.3 — 2026-09-08
+
+- Read ordinary Codex quota independently from token events, excluding Spark
+  quota snapshots and accepting quota-only updates from resumed older sessions.
+- Show the quota record time and mark expired or missing usage as unavailable.
+
 ## 0.1.2 — 2026-09-06
 
 - Fix popover dismissal on outside clicks, app switching, Escape, and repeated

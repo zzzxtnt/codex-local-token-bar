@@ -57,6 +57,15 @@ struct SessionRateLimits: Codable, Hashable, Sendable {
     let primary: RateLimitWindow?
     let secondary: RateLimitWindow?
     let planType: String?
+
+    var isCodexQuota: Bool {
+        limitId == nil || limitId == "" || limitId == "codex"
+    }
+}
+
+struct QuotaSnapshot: Sendable {
+    let timestamp: Date
+    let limits: SessionRateLimits
 }
 
 struct TokenEventInfo: Codable, Sendable {
@@ -91,6 +100,7 @@ struct LocalUsageSnapshot: Sendable {
     let contextWindow: UInt64?
     let rateLimits: SessionRateLimits?
     let sourceFile: URL
+    let quotaTimestamp: Date?
 
     init(
         timestamp: Date,
@@ -102,7 +112,8 @@ struct LocalUsageSnapshot: Sendable {
         lastRequest: TokenCounts?,
         contextWindow: UInt64?,
         rateLimits: SessionRateLimits?,
-        sourceFile: URL
+        sourceFile: URL,
+        quotaTimestamp: Date? = nil
     ) {
         self.timestamp = timestamp
         self.todayTotal = todayTotal ?? sessionTotal
@@ -114,6 +125,7 @@ struct LocalUsageSnapshot: Sendable {
         self.contextWindow = contextWindow
         self.rateLimits = rateLimits
         self.sourceFile = sourceFile
+        self.quotaTimestamp = quotaTimestamp
     }
 }
 
