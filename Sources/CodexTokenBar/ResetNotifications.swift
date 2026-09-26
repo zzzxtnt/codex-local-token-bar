@@ -37,7 +37,12 @@ final class SystemResetNotifications: NSObject, ResetNotificationSending, UNUser
     }
 
     func requestPermission() async throws -> Bool {
-        try await center.requestAuthorization(options: [.alert, .sound])
+        try await withCheckedThrowingContinuation { continuation in
+            center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: granted) }
+            }
+        }
     }
 
     func send(_ notice: QuotaResetNotice) async throws {
@@ -45,8 +50,16 @@ final class SystemResetNotifications: NSObject, ResetNotificationSending, UNUser
         content.title = "Codex 本地额度变化提醒"
         content.body = notice.message
         content.sound = .default
-        try await center.add(UNNotificationRequest(identifier: "quota-reset-" + notice.id.uuidString,
-                                                   content: content, trigger: nil))
+        let request = UNNotificationRequest(identifier: "quota-reset-" + notice.id.uuidString,
+                                            content: content, trigger: nil)
+        // Keep all notification-center calls on the main actor even with SDKs
+        // whose async imports transfer the non-Sendable center to another queue.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            center.add(request) { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            }
+        }
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
