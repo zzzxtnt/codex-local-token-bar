@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.5 — 2026-09-26
+
+- Fix notification API concurrency compatibility with Xcode 16.4 as well as newer
+  SDKs, without disabling Swift concurrency checks.
+- Publish the compact UI and local-only quota reminders from 0.1.4. The 0.1.4
+  source tag is retained, but no installer was published for that version because
+  its older-SDK CI build failed during release verification.
+
 ## 0.1.4 — 2026-09-26
 
 - Remove the empty Settings window by using a menu-bar-only AppKit lifecycle.

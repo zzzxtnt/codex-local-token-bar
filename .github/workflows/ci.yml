@@ -10,6 +10,9 @@ permissions:
 jobs:
   test:
     runs-on: macos-15
+    env:
+      # Keep the oldest supported build SDK covered as runner defaults advance.
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@v6
       - name: Test

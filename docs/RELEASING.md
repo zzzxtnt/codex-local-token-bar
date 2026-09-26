@@ -25,8 +25,9 @@ environment files.
    swift test --disable-sandbox
    ```
 
-3. Commit the tested changes and create the release tag. Confirm
-   `git status --short` is empty and the tag points to that commit.
+3. Commit and push the tested changes. Wait for CI on Xcode 16.4 to pass, then
+   create and push the release tag. Confirm `git status --short` is empty and the
+   tag points to that commit. Never move an already-published version tag.
 4. Build the release from the tagged commit. Do not publish the ad-hoc-signed
    output from `scripts/build-app.sh` as an official binary.
 
@@ -43,8 +44,8 @@ Then create the complete release. `RELEASE_VERSION` must not include the
 leading `v` used by the Git tag:
 
 ```sh
-RELEASE_VERSION=0.1.4 \
-BUILD_NUMBER=8 \
+RELEASE_VERSION=0.1.5 \
+BUILD_NUMBER=9 \
 SIGNING_IDENTITY="Developer ID Application: Your Organization (TEAMID)" \
 NOTARY_PROFILE=codex-token-bar \
 ./scripts/release-macos.sh

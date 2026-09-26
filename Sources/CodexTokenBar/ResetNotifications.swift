@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import UserNotifications
 
-enum ResetNotificationPermission { case undetermined, allowed, denied }
+enum ResetNotificationPermission: Sendable { case undetermined, allowed, denied }
 
 @MainActor
 protocol ResetNotificationSending {
@@ -21,10 +21,18 @@ final class SystemResetNotifications: NSObject, ResetNotificationSending, UNUser
     }
 
     func permission() async -> ResetNotificationPermission {
-        switch await center.notificationSettings().authorizationStatus {
-        case .authorized, .provisional: .allowed
-        case .notDetermined: .undetermined
-        default: .denied
+        // Older SDKs do not make UNNotificationSettings Sendable. Read it on
+        // the callback's queue and transfer only our value across the actor.
+        await withCheckedContinuation { continuation in
+            center.getNotificationSettings { settings in
+                let permission: ResetNotificationPermission
+                switch settings.authorizationStatus {
+                case .authorized, .provisional: permission = .allowed
+                case .notDetermined: permission = .undetermined
+                default: permission = .denied
+                }
+                continuation.resume(returning: permission)
+            }
         }
     }
 
@@ -42,9 +50,8 @@ final class SystemResetNotifications: NSObject, ResetNotificationSending, UNUser
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .list, .sound])
+        willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
     }
 }
 
