@@ -1,6 +1,6 @@
 # Privacy
 
-Codex Token Bar is a local-only macOS utility.
+Codex Token Bar is a strictly local-only macOS utility.
 
 ## Data it accesses
 
@@ -19,14 +19,17 @@ Bar does not copy the session files or persist their contents in its own databas
 
 ## Data it does not access
 
-- `~/.codex/auth.json`
-- API keys, browser cookies, or Keychain credentials
+- `~/.codex/auth.json`, login configuration, or account state caches
+- Account IDs, access/refresh tokens, API keys, browser cookies, or Keychain credentials
 - Prompt or response content as application data
 
 ## Network and telemetry
 
-The app contains no network client, analytics SDK, crash reporter, advertising,
-automatic updater, or telemetry. It does not upload session data or usage totals.
+The app makes no network requests, including to OpenAI. There is no network
+client, analytics SDK, crash reporter, advertising, automatic updater, or telemetry.
+It never uploads logs or usage totals. Reset alerts use local macOS notifications,
+not a remote push service. Notification text contains only window names and usage
+percentages, not account identities or file paths.
 Users check GitHub Releases for updates manually; the app does not contact GitHub.
 
 ## Local storage
@@ -36,11 +39,18 @@ registration when the user enables “Launch at Login”; that state is managed 
 macOS Service Management. Uninstalling the app does not remove or modify files
 under `~/.codex`.
 
+The notification toggle and the timestamp of a manual “clear old quota” action
+are stored in local app preferences. Detection baselines, deduplication, and the
+latest notice are held only in memory. macOS may retain delivered notifications.
+
 ## Tests
 
 Fixture tests use synthetic records. The live integration test reads the current
 user's local Codex sessions only when `CODEX_TOKEN_BAR_LIVE_TEST=1` is explicitly
 set by the developer.
+There are no credential or online integration tests. A source-boundary regression
+test rejects common network/credential APIs; behavior tests use synthetic logs
+and a fake notification sender, never an actual subscription reset.
 
 ## Changes
 

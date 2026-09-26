@@ -18,15 +18,15 @@ environment files.
 
 ## Before packaging
 
-1. Confirm `git status --short` is empty and `HEAD` is the intended release
-   commit.
-2. Update the app version/build number and `CHANGELOG.md`.
-3. Run the tests:
+1. Update the app version/build number, `CHANGELOG.md`, and user-facing docs.
+2. Run the tests:
 
    ```sh
    swift test --disable-sandbox
    ```
 
+3. Commit the tested changes and create the release tag. Confirm
+   `git status --short` is empty and the tag points to that commit.
 4. Build the release from the tagged commit. Do not publish the ad-hoc-signed
    output from `scripts/build-app.sh` as an official binary.
 
@@ -43,8 +43,8 @@ Then create the complete release. `RELEASE_VERSION` must not include the
 leading `v` used by the Git tag:
 
 ```sh
-RELEASE_VERSION=0.1.0 \
-BUILD_NUMBER=1 \
+RELEASE_VERSION=0.1.4 \
+BUILD_NUMBER=8 \
 SIGNING_IDENTITY="Developer ID Application: Your Organization (TEAMID)" \
 NOTARY_PROFILE=codex-token-bar \
 ./scripts/release-macos.sh
@@ -53,6 +53,10 @@ NOTARY_PROFILE=codex-token-bar \
 The script builds both architectures, signs and notarizes the app and disk
 image, staples the tickets, runs Gatekeeper checks, and writes the final `.dmg`
 and `SHA256SUMS.txt` to `dist/`.
+
+The script intentionally refuses to overwrite release artifacts. If `dist/`
+contains a previous release's checksum, preserve it alongside that older disk
+image in a separate directory before starting a new release.
 
 ## Required release properties
 
@@ -117,10 +121,17 @@ Test the final disk image on a Mac where this build has not been launched before
 1. Drag the app into Applications and launch it from Finder.
 2. Confirm there is no Gatekeeper bypass or unexpected permission request.
 3. Confirm the menu bar displays a value and the panel opens.
+   No standalone empty Settings window should appear. Verify that the panel
+   shrinks with shorter content and that long notices can still scroll.
 4. Compare the displayed exact daily total with the live test or parity probe.
 5. Enable Launch at Login and confirm macOS reports it as enabled.
 6. Quit and reopen the app, then disable Launch at Login again.
-7. Confirm the app made no network request and did not modify `~/.codex`.
+7. Confirm no network requests or credential reads, and no modification of `~/.codex`.
+8. Confirm quota is labelled as unverified history. Clear old quota: it must stay
+   hidden across restart until a newer record appears; token totals must not change.
+9. Verify notifications with synthetic log fixtures only: permission allowed/denied,
+   two fresh events, duplicate events, source changes, and manual clearing. Do not
+   consume real reset credits. Check system banners separately on the installed app.
 
 ## Publish on GitHub
 

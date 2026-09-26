@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Until the first stable release, security fixes are made on the latest `main`
-branch only.
+Security fixes target the latest stable release and the `main` branch. Older
+versions are not maintained separately; update to the newest release.
 
 ## Reporting a vulnerability
 
@@ -20,8 +20,10 @@ sanitized reproduction possible. Synthetic JSONL fixtures are preferred.
 Codex Token Bar is intended to:
 
 - read local Codex token metadata;
-- avoid credentials and Keychain access;
-- make no network requests;
+- avoid credentials, account identity, and Keychain access;
+- make no network requests, including to official endpoints;
+- never label unowned local quota logs as current-account or real-time truth;
+- use only local macOS notifications for suspected changes;
 - avoid persisting session contents;
 - use macOS Service Management only when the user changes Launch at Login.
 

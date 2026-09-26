@@ -68,6 +68,11 @@ struct QuotaSnapshot: Sendable {
     let limits: SessionRateLimits
 }
 
+struct LocalQuotaRecord: Sendable {
+    let quota: QuotaSnapshot
+    let sourceFile: URL
+}
+
 struct TokenEventInfo: Codable, Sendable {
     let totalTokenUsage: TokenCounts?
     let lastTokenUsage: TokenCounts?

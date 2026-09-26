@@ -10,13 +10,39 @@ final class UsageModel: ObservableObject {
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var launchAtLoginEnabled = false
     @Published private(set) var launchAtLoginMessage: String?
-
+    @Published private(set) var localQuota: LocalQuotaRecord?
+    @Published private(set) var quotaMessage = "正在读取本地额度记录…"
+    @Published private(set) var resetNotice: QuotaResetNotice?
+    private var resetDetector = QuotaResetDetector()
     private var refreshLoop: Task<Void, Never>?
+    private var quotaLoop: Task<Void, Never>?
+    private var isReadingQuota = false
+    private var quotaGeneration = UUID()
+    private var ignoreQuotaThrough: Date?
+    private let preferences: UserDefaults
+    private let readLocal: @Sendable () throws -> LocalUsageSnapshot
+    private let readQuota: @Sendable () throws -> LocalQuotaRecord?
 
-    init() {
+    init(startAutomatically: Bool = true,
+         readLocal: @escaping @Sendable () throws -> LocalUsageSnapshot = { try SessionUsageReader().dailySnapshot() },
+         readQuota: @escaping @Sendable () throws -> LocalQuotaRecord? = { try SessionUsageReader().latestQuotaRecord() },
+         preferences: UserDefaults = .standard) {
+        self.readLocal = readLocal
+        self.readQuota = readQuota
+        self.preferences = preferences
+        if let cutoff = preferences.object(forKey: "ignoreQuotaThrough") as? Double {
+            ignoreQuotaThrough = Date(timeIntervalSince1970: cutoff)
+        }
+        guard startAutomatically else { return }
+        quotaLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshLocalQuota()
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
         refreshLoop = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.refresh()
+                await self?.refreshTokens()
                 try? await Task.sleep(for: .seconds(30))
             }
         }
@@ -24,6 +50,7 @@ final class UsageModel: ObservableObject {
 
     deinit {
         refreshLoop?.cancel()
+        quotaLoop?.cancel()
     }
 
     var menuTitle: String {
@@ -37,25 +64,87 @@ final class UsageModel: ObservableObject {
     }
 
     var effectivePrimaryWindow: RateLimitWindow? {
-        localUsage?.rateLimits?.primary
+        localQuota?.quota.limits.primary
     }
 
     var effectiveSecondaryWindow: RateLimitWindow? {
-        localUsage?.rateLimits?.secondary
+        localQuota?.quota.limits.secondary
     }
 
     var planType: String? {
-        localUsage?.rateLimits?.planType
+        localQuota?.quota.limits.planType
+    }
+
+    /// Read only usage logs. This data cannot identify the currently signed-in account.
+    func refreshLocalQuota(now: Date = Date()) async {
+        guard !isReadingQuota else { return }
+        isReadingQuota = true
+        defer { isReadingQuota = false }
+        let generation = quotaGeneration
+        do {
+            let reader = readQuota
+            let record = try await Task.detached(priority: .utility) { try reader() }.value
+            guard generation == quotaGeneration else { return }
+            guard let record,
+                  record.quota.timestamp <= now.addingTimeInterval(5),
+                  ignoreQuotaThrough.map({ record.quota.timestamp > $0 }) ?? true else {
+                clearQuotaState()
+                quotaMessage = ignoreQuotaThrough == nil ? "没有可用的本地额度记录" : "额度待确认：等待清除操作之后的新记录"
+                return
+            }
+            if let existing = localQuota, existing.quota.timestamp > record.quota.timestamp { return }
+            if localQuota?.sourceFile != record.sourceFile {
+                resetDetector.clear()
+                resetNotice = nil
+            }
+            localQuota = record
+            quotaMessage = "本地历史记录，无法确认是否属于当前账号"
+            // Only fresh, distinct log events can form a detection. Re-reading a
+            // file is not confirmation, and startup must not replay old resets.
+            if now.timeIntervalSince(record.quota.timestamp) <= 120 {
+                if let notice = resetDetector.observe(record.quota, source: record.sourceFile.path) {
+                    resetNotice = notice
+                }
+            } else {
+                resetDetector.clear()
+            }
+        } catch {
+            guard generation == quotaGeneration else { return }
+            clearQuotaState()
+            quotaMessage = "本地额度读取失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// Explicit user action; no account data is inspected or stored.
+    func discardOldQuota(now: Date = Date()) {
+        quotaGeneration = UUID()
+        ignoreQuotaThrough = now
+        preferences.set(now.timeIntervalSince1970, forKey: "ignoreQuotaThrough")
+        clearQuotaState()
+        quotaMessage = "额度待确认：等待清除操作之后的新记录"
+    }
+
+    private func clearQuotaState() {
+        localQuota = nil
+        resetDetector.clear()
+        resetNotice = nil
     }
 
     func refresh() async {
+        async let quota: Void = refreshLocalQuota()
+        await refreshTokens()
+        await quota
+    }
+
+    private func refreshTokens() async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
         do {
+            let reader = readLocal
             let snapshot = try await Task.detached(priority: .utility) {
-                try SessionUsageReader().dailySnapshot()
+                try reader()
             }.value
             localUsage = snapshot
             localError = nil

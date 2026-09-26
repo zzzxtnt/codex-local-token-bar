@@ -2,21 +2,35 @@ import Foundation
 import SwiftUI
 
 struct UsagePopover: View {
+    static let panelWidth: CGFloat = 320
+    static let maximumHeight: CGFloat = 520
+
     @ObservedObject var model: UsageModel
+    @ObservedObject var notifications: ResetNotificationController
     var onClose: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        ViewThatFits(in: .vertical) {
+            content.fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                content
+            }
+            .frame(height: Self.maximumHeight)
+        }
+        .frame(width: Self.panelWidth)
+        .frame(maxHeight: Self.maximumHeight)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // Kept separate so offline layout tests can verify the unscrolled content height.
+    var content: some View {
+        VStack(alignment: .leading, spacing: 8) {
             header
 
             if let usage = model.localUsage {
                 tokenSection(usage)
-                Divider()
-                quotaSection
-                Divider()
-                sourceSection(usage)
             } else if let error = model.localError {
-                VStack(spacing: 10) {
+                VStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.title2)
                         .foregroundStyle(.secondary)
@@ -26,29 +40,28 @@ struct UsagePopover: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
-                .frame(maxWidth: .infinity, minHeight: 180)
+                .frame(maxWidth: .infinity, minHeight: 76)
             } else {
                 ProgressView("正在读取 Codex token…")
-                    .frame(maxWidth: .infinity, minHeight: 180)
+                    .frame(maxWidth: .infinity, minHeight: 76)
             }
 
+            Divider()
+            quotaSection
             footer
         }
-        .padding(16)
-        .frame(width: 350)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Codex Token")
-                    .font(.headline)
-                if let plan = model.planType, !plan.isEmpty {
-                    Text(plan.uppercased())
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
+        HStack(spacing: 8) {
+            Text("Codex Token")
+                .font(.system(size: 13, weight: .semibold))
+            Text("纯本地")
+                .font(.caption2).foregroundStyle(.secondary)
+                .help("不联网，不读取账号或登录信息。")
             Spacer()
             if model.isRefreshing {
                 ProgressView().controlSize(.small)
@@ -63,48 +76,47 @@ struct UsagePopover: View {
     }
 
     private func tokenSection(_ usage: LocalUsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            MetricRow(
-                title: "今日合计",
-                value: TokenFormatter.exact(usage.todayTotal.normalizedTotal),
-                unit: "tokens",
-                emphasized: true
-            )
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("今日 Token")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 6)
+                Text(TokenFormatter.exact(usage.todayTotal.normalizedTotal))
+                    .font(.system(size: 21, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
 
             HStack(spacing: 8) {
-                MiniMetric(title: "有效请求", value: usage.todayRequestCount.formatted())
-                MiniMetric(title: "今日输入", value: TokenFormatter.compact(usage.todayTotal.inputTokens ?? 0))
-                MiniMetric(title: "今日输出", value: TokenFormatter.compact(usage.todayTotal.outputTokens ?? 0))
-                MiniMetric(title: "当前会话", value: TokenFormatter.compact(usage.sessionTotal.normalizedTotal))
+                MiniMetric(title: "输入", value: TokenFormatter.compact(usage.todayTotal.inputTokens ?? 0))
+                MiniMetric(title: "输出", value: TokenFormatter.compact(usage.todayTotal.outputTokens ?? 0))
+                MiniMetric(title: "请求", value: usage.todayRequestCount.formatted())
             }
 
             CacheHitProgress(tokens: usage.todayTotal)
-
-            if let contextWindow = usage.contextWindow {
-                HStack {
-                    Text("模型上下文上限")
-                    Spacer()
-                    Text(TokenFormatter.exact(contextWindow)) + Text(" tokens")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
         }
     }
 
     @ViewBuilder
     private var quotaSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("Codex 订阅额度")
-                .font(.subheadline.weight(.semibold))
-            if let timestamp = model.localUsage?.quotaTimestamp {
-                Text("额度记录 \(timestamp.formatted(date: .abbreviated, time: .shortened))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("已用额度")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text("账号未确认")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
+            if let notice = model.resetNotice {
+                Text(notice.message + " · " + notice.timestamp.formatted(date: .omitted, time: .shortened))
+                    .font(.caption).foregroundStyle(.green)
+            }
+            Text("非实时额度；切换账号后请清除旧记录。")
+                .font(.caption2).foregroundStyle(.secondary)
 
             if model.effectivePrimaryWindow == nil && model.effectiveSecondaryWindow == nil {
-                Text("当前日志没有额度快照")
+                Text(model.quotaMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -115,43 +127,34 @@ struct UsagePopover: View {
                     QuotaRow(window: secondary, fallbackName: "次窗口")
                 }
             }
-        }
-    }
-
-    private func sourceSection(_ usage: LocalUsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text("最近记录")
+                if let timestamp = model.localQuota?.quota.timestamp {
+                    Text("记录 \(timestamp.formatted(date: .numeric, time: .shortened))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
                 Spacer()
-                Text(usage.timestamp, style: .relative)
+                Button("清除旧额度") { model.discardOldQuota() }
+                    .buttonStyle(.plain)
+                    .font(.caption2)
+                    .help("切换账号后清除旧额度，等待新记录；不会删除日志或 Token 用量。")
             }
-            Text(usage.sourceFile.lastPathComponent)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Text("已扫描 \(usage.scannedFileCount) 个文件；延后 \(usage.deferredFileCount) 个")
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
     }
 
     private var footer: some View {
-        VStack(spacing: 9) {
-            Toggle(
-                "登录时自动启动",
-                isOn: Binding(
+        VStack(spacing: 8) {
+            UsagePreferences(
+                resetNotificationsEnabled: Binding(
+                    get: { notifications.enabled },
+                    set: { value in Task { await notifications.setEnabled(value) } }
+                ),
+                notificationMessage: notifications.message,
+                launchAtLoginEnabled: Binding(
                     get: { model.launchAtLoginEnabled },
                     set: { model.setLaunchAtLogin($0) }
-                )
+                ),
+                launchAtLoginMessage: model.launchAtLoginMessage ?? "登录 Mac 后自动运行"
             )
-            .toggleStyle(.switch)
-            .controlSize(.small)
-
-            if let message = model.launchAtLoginMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
 
             HStack {
                 Button {
@@ -183,51 +186,22 @@ private struct CacheHitProgress: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text("缓存命中率")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(percentageLabel)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.green)
-                    .monospacedDigit()
-            }
-            .font(.caption)
-
+        HStack(spacing: 8) {
+            Text("缓存命中")
+                .foregroundStyle(.secondary)
             ProgressView(value: percentage, total: 100)
                 .tint(.green)
-
-            Text(
-                "缓存命中 \(TokenFormatter.exact(tokens.cachedInputTokens ?? 0)) / "
-                    + "输入 \(TokenFormatter.exact(tokens.inputTokens ?? 0)) tokens"
-            )
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+            Text(percentageLabel)
+                .fontWeight(.medium)
+                .foregroundStyle(.green)
+                .monospacedDigit()
+                .frame(width: 42, alignment: .trailing)
         }
+        .font(.caption)
+        .help("缓存命中 \(TokenFormatter.exact(tokens.cachedInputTokens ?? 0)) / 输入 \(TokenFormatter.exact(tokens.inputTokens ?? 0)) tokens")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("今日缓存命中率")
         .accessibilityValue(percentageLabel)
-    }
-}
-
-private struct MetricRow: View {
-    let title: String
-    let value: String
-    let unit: String
-    let emphasized: Bool
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title).foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(emphasized ? .title2.weight(.semibold) : .body)
-                .monospacedDigit()
-            Text(unit)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 }
 
@@ -236,7 +210,7 @@ private struct MiniMetric: View {
     let value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: 5) {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -245,8 +219,6 @@ private struct MiniMetric: View {
                 .monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(7)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
     }
 }
 
@@ -266,23 +238,29 @@ private struct QuotaRow: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(windowName)
-                Spacer()
+                    .frame(width: 42, alignment: .leading)
+                if !expired && window.usedPercent != nil {
+                    ProgressView(value: used, total: 100)
+                        .tint(color(for: used))
+                } else {
+                    Spacer()
+                }
                 if expired {
-                    Text("已重置，等待新记录")
+                    Text("待确认")
+                        .foregroundStyle(.secondary)
+                        .help("已到预计重置时间，等待新记录确认。")
                 } else if window.usedPercent == nil {
                     Text("暂无用量记录")
                 } else {
-                    Text("已用 \(used, specifier: "%.0f")%")
+                    Text("\(used, specifier: "%.0f")%")
                         .monospacedDigit()
+                        .frame(width: 42, alignment: .trailing)
+                        .accessibilityLabel(Text("已用 \(used, specifier: "%.0f")%"))
                 }
             }
             .font(.caption)
-            if !expired && window.usedPercent != nil {
-                ProgressView(value: used, total: 100)
-                    .tint(color(for: used))
-            }
             if let reset = window.resetDate {
-                Text("重置时间 \(reset.formatted(date: .abbreviated, time: .shortened))")
+                Text("预计重置 \(reset.formatted(date: .numeric, time: .shortened))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

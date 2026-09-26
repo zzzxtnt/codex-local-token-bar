@@ -59,7 +59,7 @@ exact Gatekeeper message. Do not attach Codex session logs.
 ## Launch at Login
 
 1. Click Codex Token Bar in the menu bar.
-2. Enable **登录时自动启动** (Launch at Login).
+2. Enable **登录时启动** (Launch at Login).
 3. If the app says approval is required, open **System Settings → General →
    Login Items & Extensions** and allow Codex Token Bar under **Open at Login**.
 
@@ -76,7 +76,7 @@ Applications. Your local Codex session files are not changed.
 
 ## Uninstall
 
-1. Open the menu bar panel and turn off **登录时自动启动**.
+1. Open the menu bar panel and turn off **登录时启动**.
 2. Choose **退出** (Quit).
 3. Move `/Applications/Codex Token Bar.app` to the Trash.
 4. If Codex Token Bar still appears in **System Settings → General → Login Items
@@ -93,11 +93,17 @@ Codex Token Bar reads token-count metadata from:
 - `~/.codex/sessions`
 - `~/.codex/archived_sessions`
 
-It does not read `~/.codex/auth.json`, use Keychain credentials, upload session
-files, send telemetry, or contact an update server. Prompt and response records
+It does not read `~/.codex/auth.json`, account identity, or Keychain credentials,
+upload session files, send telemetry, or contact any server. Prompt and response records
 in the JSONL files are ignored. The app does not require Full Disk Access for
 its normal location under your home folder. See [PRIVACY.md](../PRIVACY.md) for
 the full privacy boundary.
+
+For suspected-reset banners, use **重置提醒** and allow notifications
+in macOS. If denied, enable them in System Settings → Notifications → Codex Token
+Bar. Focus/banner settings may prevent a popup. Detection needs new local records;
+it is not real-time account monitoring. After switching accounts, click
+**清除旧额度**; this hides older quota without deleting logs.
 
 ## Build from source instead
 

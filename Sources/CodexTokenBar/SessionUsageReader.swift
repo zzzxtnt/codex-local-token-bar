@@ -154,16 +154,7 @@ struct SessionUsageReader: Sendable {
         guard let latest else { throw UsageError.noTokenEvents }
         // Quota updates can have info=null and can follow a different model's
         // token snapshot. Select the ordinary Codex bucket independently.
-        var quota: QuotaSnapshot?
-        for file in candidates {
-            if let quota, modificationDate(for: file) < quota.timestamp { break }
-            let record = try reverseRecord(in: file) { data in
-                decodeLatestQuota(from: data)
-            }
-            if let record, quota == nil || record.timestamp > quota!.timestamp {
-                quota = record
-            }
-        }
+        let quota = try latestQuotaRecord(in: candidates)?.quota
         return LocalUsageSnapshot(
             timestamp: latest.timestamp,
             sessionTotal: latest.sessionTotal,
@@ -173,6 +164,25 @@ struct SessionUsageReader: Sendable {
             sourceFile: latest.sourceFile,
             quotaTimestamp: quota?.timestamp
         )
+    }
+
+    /// Quota-only logs remain readable even without a token-info record.
+    func latestQuotaRecord(now: Date = Date()) throws -> LocalQuotaRecord? {
+        try latestQuotaRecord(in: candidateFiles(now: now))
+    }
+
+    private func latestQuotaRecord(in candidates: [URL]) throws -> LocalQuotaRecord? {
+        var quota: LocalQuotaRecord?
+        for file in candidates {
+            if let quota, modificationDate(for: file) < quota.quota.timestamp { break }
+            let record = try reverseRecord(in: file) { data in
+                decodeLatestQuota(from: data)
+            }
+            if let record, quota == nil || record.timestamp > quota!.quota.timestamp {
+                quota = LocalQuotaRecord(quota: record, sourceFile: file)
+            }
+        }
+        return quota
     }
 
     private func candidateFiles(now: Date) throws -> [URL] {

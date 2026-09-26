@@ -3,12 +3,17 @@ import Combine
 import SwiftUI
 
 @main
-struct CodexTokenBarApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-
-    var body: some Scene {
-        Settings {
-            EmptyView()
+enum CodexTokenBarApp {
+    @MainActor
+    static func main() {
+        // This is a menu-bar-only app. A placeholder SwiftUI Settings scene
+        // still registers a real, empty window that activation can present.
+        let application = NSApplication.shared
+        application.setActivationPolicy(.accessory)
+        let delegate = AppDelegate()
+        application.delegate = delegate
+        withExtendedLifetime(delegate) {
+            application.run()
         }
     }
 }
@@ -16,6 +21,7 @@ struct CodexTokenBarApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let model = UsageModel()
+    private let resetNotifications = ResetNotificationController(sender: SystemResetNotifications())
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var observations = Set<AnyCancellable>()
@@ -34,11 +40,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.behavior = .applicationDefined
         popover.animates = false
         popover.delegate = self
-        popover.contentSize = NSSize(width: 350, height: 430)
-        popover.contentViewController = NSHostingController(rootView: UsagePopover(
+        let controller = UsagePopoverController(
             model: model,
+            notifications: resetNotifications,
             onClose: { [weak self] in self?.closePopover() }
-        ))
+        )
+        controller.attach(to: popover)
 
         model.$localUsage
             .receive(on: RunLoop.main)
@@ -49,8 +56,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             .sink { [weak self] _ in self?.updateButton() }
             .store(in: &observations)
 
+        model.$resetNotice
+            .compactMap { $0 }
+            .sink { [weak self] notice in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.resetNotifications.deliver(notice) { [weak self] in
+                        self?.model.resetNotice?.id == notice.id
+                    }
+                }
+            }
+            .store(in: &observations)
+
         updateButton()
         model.updateLaunchAtLoginStatus()
+        Task { await resetNotifications.prepare() }
     }
 
     private func configureButton(_ button: NSStatusBarButton?) {
@@ -137,6 +157,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func applicationDidResignActive(_ notification: Notification) {
         closePopover()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Reopening the app must never manufacture a standalone window.
+        false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
