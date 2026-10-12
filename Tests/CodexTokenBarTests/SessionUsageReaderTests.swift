@@ -44,7 +44,8 @@ struct SessionUsageReaderTests {
         #expect(snapshot.lastRequest?.normalizedTotal == 63_965)
     }
 
-    @Test func aggregatesLocalDayWithCCSwitchReplayAndDedupRules() throws {
+    @Test(arguments: [false, true])
+    func aggregatesLocalDayWithCCSwitchReplayAndDedupRules(usesRolloutSuffix: Bool) throws {
         let temporaryRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let sessions = temporaryRoot.appendingPathComponent("sessions", isDirectory: true)
@@ -76,9 +77,13 @@ struct SessionUsageReaderTests {
             tokenEvent(totalInput: 30, cached: 15, output: 3, timestamp: "2026-08-29T03:02:00Z"),
         ]
 
-        try write(parentEvents, id: parentID, to: sessions)
+        try write(parentEvents, id: parentID,
+                  rolloutID: usesRolloutSuffix ? "44444444-4444-4444-8444-444444444444" : nil,
+                  to: sessions)
         try write(parentEvents, id: parentID, to: archived)
-        try write(childEvents, id: childID, to: sessions)
+        try write(childEvents, id: childID,
+                  rolloutID: usesRolloutSuffix ? "55555555-5555-4555-8555-555555555555" : nil,
+                  to: sessions)
         try write(cumulativeOnlyEvents, id: otherID, to: sessions)
 
         var calendar = Calendar(identifier: .gregorian)
@@ -99,6 +104,34 @@ struct SessionUsageReaderTests {
         #expect(snapshot.todayRequestCount == 5)
         #expect(snapshot.scannedFileCount == 4)
         #expect(snapshot.deferredFileCount == 0)
+    }
+
+    @Test(arguments: [false, true])
+    func defersRolloutsWithMismatchedSessionMetadata(usesRolloutSuffix: Bool) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let fileID = "11111111-1111-4111-8111-111111111111"
+        let metadataID = "22222222-2222-4222-8222-222222222222"
+        let events = [
+            sessionMeta(id: metadataID, timestamp: "2026-08-29T02:00:00Z"),
+            tokenEvent(totalInput: 100, cached: 70, output: 10,
+                       timestamp: "2026-08-29T02:01:00Z"),
+        ]
+        try write(events, id: fileID,
+                  rolloutID: usesRolloutSuffix ? metadataID : nil, to: root)
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try #require(CodexJSON.parseDate("2026-08-29T04:00:00Z"))
+        let snapshot = try SessionUsageReader(sessionsRoot: root)
+            .dailySnapshot(now: now, calendar: calendar)
+
+        #expect(snapshot.todayTotal.normalizedTotal == 0)
+        #expect(snapshot.todayRequestCount == 0)
+        #expect(snapshot.deferredFileCount == 1)
     }
 
     @Test func cacheHitRateHandlesEmptyAndMalformedCounts() {
@@ -155,8 +188,11 @@ struct SessionUsageReaderTests {
         return "{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":\(totalInput),\"cached_input_tokens\":\(cached),\"output_tokens\":\(output),\"total_tokens\":\(totalInput + output)}\(last)}}}"
     }
 
-    private func write(_ lines: [String], id: String, to directory: URL) throws {
-        let file = directory.appendingPathComponent("rollout-\(id).jsonl")
+    private func write(_ lines: [String], id: String, rolloutID: String? = nil,
+                       to directory: URL) throws {
+        let name = rolloutID.map { "rollout-2026-08-29T10-00-00-\(id)_\($0).jsonl" }
+            ?? "rollout-\(id).jsonl"
+        let file = directory.appendingPathComponent(name)
         try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: file)
     }
 }
