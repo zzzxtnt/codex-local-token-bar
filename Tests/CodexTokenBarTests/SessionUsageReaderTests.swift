@@ -99,6 +99,65 @@ struct SessionUsageReaderTests {
         #expect(snapshot.todayRequestCount == 5)
         #expect(snapshot.scannedFileCount == 4)
         #expect(snapshot.deferredFileCount == 0)
+        #expect(snapshot.averageOutputTokensPerSecond == 0)
+        let active = try SessionUsageReader(sessionsRoot: sessions, archivedSessionsRoot: archived)
+            .dailySnapshot(now: try #require(CodexJSON.parseDate("2026-08-29T02:05:00Z")), calendar: calendar)
+        // 19 output tokens, excluding archived copies, repeated snapshots and child replay.
+        #expect(abs(try #require(active.averageOutputTokensPerSecond) - 19.0 / 300) < 0.000001)
+    }
+
+    @Test func outputSpeedCrossesMidnightAndExpiresWithoutCountingInputOrFutureEvents() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = "11111111-1111-4111-8111-111111111111"
+        try write([
+            sessionMeta(id: id, timestamp: "2026-10-14T15:00:00Z"),
+            tokenEvent(totalInput: 1000, cached: 900, output: 900, timestamp: "2026-10-14T15:56:00Z"),
+            tokenEvent(totalInput: 2000, cached: 1800, output: 1200, timestamp: "2026-10-14T15:59:00Z"),
+            tokenEvent(totalInput: 3000, cached: 2700, output: 1800, timestamp: "2026-10-14T16:00:00Z"),
+            tokenEvent(totalInput: 4000, cached: 3600, output: 2100, timestamp: "2026-10-14T16:02:00Z")
+        ], id: id, to: root)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        let reader = SessionUsageReader(sessionsRoot: root)
+        let now = try #require(CodexJSON.parseDate("2026-10-14T16:01:00Z"))
+        let value = try reader.dailySnapshot(now: now, calendar: calendar)
+        // (300 before midnight + 600 after midnight) / 300 seconds. Lower bound excluded.
+        #expect(value.averageOutputTokensPerSecond == 3)
+        let idle = try reader.dailySnapshot(now: now.addingTimeInterval(600), calendar: calendar)
+        #expect(idle.averageOutputTokensPerSecond == 0)
+    }
+
+    @Test func speedIsUnavailableWhenSessionCannotBeAttributed() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let now = Date()
+        try write([tokenEvent(totalInput: 1, cached: 0, output: 300,
+                             timestamp: ISO8601DateFormatter().string(from: now))],
+                  id: "11111111-1111-4111-8111-111111111111", to: root)
+        let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
+        #expect(value.averageOutputTokensPerSecond == nil)
+    }
+
+    @Test func speedIncludesFileLastModifiedBeforeMidnight() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = "11111111-1111-4111-8111-111111111111"
+        try write([sessionMeta(id: id, timestamp: "2026-10-14T15:00:00Z"),
+                   tokenEvent(totalInput: 1000, cached: 900, output: 300,
+                              timestamp: "2026-10-14T15:59:00Z")], id: id, to: root)
+        try FileManager.default.setAttributes([.modificationDate:
+            try #require(CodexJSON.parseDate("2026-10-14T15:59:01Z"))],
+            ofItemAtPath: root.appendingPathComponent("rollout-\(id).jsonl").path)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(
+            now: try #require(CodexJSON.parseDate("2026-10-14T16:01:00Z")), calendar: calendar)
+        #expect(value.todayTotal.normalizedTotal == 0)
+        #expect(value.averageOutputTokensPerSecond == 1)
     }
 
     @Test func cacheHitRateHandlesEmptyAndMalformedCounts() {

@@ -43,7 +43,7 @@ struct PopoverLayoutTests {
             scannedFileCount: 1_024, deferredFileCount: 16, sessionTotal: tokens, lastRequest: nil,
             contextWindow: 258_000, rateLimits: nil, sourceFile: source)
 
-        for state in ["loaded", "expired", "empty", "read-error", "permission", "long-error"] {
+        for state in ["loaded", "expired", "empty", "read-error", "permission", "long-error", "update-available", "update-error", "update-current"] {
             let defaultsName = "PopoverLayoutTests." + UUID().uuidString
             let defaults = try #require(UserDefaults(suiteName: defaultsName))
             defer { defaults.removePersistentDomain(forName: defaultsName) }
@@ -69,7 +69,18 @@ struct PopoverLayoutTests {
             let notifications = ResetNotificationController(
                 sender: LayoutNotificationSender(denied: state == "permission"), defaults: defaults)
             await notifications.prepare()
-            let popover = UsagePopover(model: model, notifications: notifications)
+            let updater = UpdateController(currentVersion: "0.1.6", fetch: { _, _ in
+                if state == "update-error" { throw UpdateFailure("无法连接 GitHub，请稍后重试。") }
+                let version = state == "update-current" ? "0.1.6" : "0.1.7"
+                return try JSONSerialization.data(withJSONObject: ["tag_name": "v\(version)",
+                    "body": "新版更新说明：改善体验，不上传任何本地日志。", "draft": false, "prerelease": false,
+                    "assets": ["CodexTokenBar-v\(version)-universal.dmg", "SHA256SUMS.txt"].map {
+                        ["name": $0, "size": 3, "state": "uploaded",
+                         "browser_download_url": "https://github.com/\(UpdateRelease.repository)/releases/download/v\(version)/\($0)"] as [String: Any]
+                    }])
+            }, install: { _, _, _ in Issue.record("Layout tests must not install") })
+            if state.hasPrefix("update-") { await updater.check() }
+            let popover = UsagePopover(model: model, notifications: notifications, updater: updater)
             let layout = NSHostingView(rootView: popover.content.frame(width: UsagePopover.panelWidth))
             let contentHeight = layout.fittingSize.height
             #expect(contentHeight > 200)
@@ -79,12 +90,27 @@ struct PopoverLayoutTests {
             }
             if state == "long-error" { #expect(contentHeight > UsagePopover.maximumHeight) }
             let expectedHeight = min(contentHeight, UsagePopover.maximumHeight)
-            let controller = UsagePopoverController(model: model, notifications: notifications)
+            let controller = UsagePopoverController(model: model, notifications: notifications, updater: updater)
             let nativePopover = NSPopover()
             controller.attach(to: nativePopover)
             controller.view.layoutSubtreeIfNeeded()
             #expect(abs(controller.preferredContentSize.height - expectedHeight) <= 1)
             #expect(abs(nativePopover.contentSize.height - expectedHeight) <= 1)
+            if state == "update-available" {
+                updater.notesExpanded = true
+                for _ in 0..<30 {
+                    if nativePopover.contentSize.height > expectedHeight + 30 { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                #expect(nativePopover.contentSize.height > expectedHeight + 30)
+                #expect(nativePopover.contentSize.height <= UsagePopover.maximumHeight)
+                updater.notesExpanded = false
+                for _ in 0..<30 {
+                    if abs(nativePopover.contentSize.height - expectedHeight) <= 1 { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                #expect(abs(nativePopover.contentSize.height - expectedHeight) <= 1)
+            }
             for dark in [false, true] {
                 let host = NSHostingView(rootView: popover
                     .background(Color(nsColor: .windowBackgroundColor))

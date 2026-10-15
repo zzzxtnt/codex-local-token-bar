@@ -2,7 +2,7 @@ import Foundation
 import Testing
 
 struct LocalPrivacyBoundaryTests {
-    @Test func applicationHasNoNetworkOrCredentialReader() throws {
+    @Test func onlyManualUpdaterMayUseNetworkOrProcessesAndNoCredentialsAreRead() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/CodexTokenBar")
@@ -10,8 +10,10 @@ struct LocalPrivacyBoundaryTests {
             .filter { $0.pathExtension == "swift" }
         for file in files {
             let source = try String(contentsOf: file, encoding: .utf8)
-            for forbidden in ["URLSession", "URLRequest", "auth.json", "access_token", "refresh_token",
-                              "SecItemCopyMatching", "import Network", "import Security", "Process()"] {
+            let updaterFiles = ["UpdateRelease.swift", "UpdateInstaller.swift", "UpdateController.swift"]
+            let forbiddenEverywhere = ["auth.json", "access_token", "refresh_token", "SecItemCopyMatching"]
+            let forbiddenInStatistics = ["URLSession", "URLRequest", "import Network", "import Security", "Process()"]
+            for forbidden in forbiddenEverywhere + (updaterFiles.contains(file.lastPathComponent) ? [] : forbiddenInStatistics) {
                 let violatesBoundary = source.contains(forbidden)
                 #expect(!violatesBoundary, "Privacy boundary: \(file.lastPathComponent) contains \(forbidden)")
             }

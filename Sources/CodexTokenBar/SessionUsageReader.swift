@@ -43,7 +43,8 @@ struct SessionUsageReader: Sendable {
             return (id, file)
         }, by: { $0.0 }).mapValues { $0.map(\.1) }
 
-        let selectedFiles = allFiles.filter { modificationDate(for: $0) >= dayStart }.sorted {
+        let speedStart = now.addingTimeInterval(-300)
+        let selectedFiles = allFiles.filter { modificationDate(for: $0) >= min(dayStart, speedStart) }.sorted {
             $0.path < $1.path
         }
         var parsedCache: [URL: ParsedCodexFile] = [:]
@@ -56,6 +57,8 @@ struct SessionUsageReader: Sendable {
         }
 
         var requestIDs = Set<String>()
+        var speedRequestIDs = Set<String>()
+        var recentOutput: UInt64 = 0
         var dailyInput: UInt64 = 0
         var dailyCached: UInt64 = 0
         var dailyOutput: UInt64 = 0
@@ -99,12 +102,15 @@ struct SessionUsageReader: Sendable {
             for (index, event) in fileData.events.enumerated() {
                 guard index >= replayPrefix,
                       let eventIndex = event.eventIndex,
-                      let timestamp = event.timestamp,
-                      timestamp >= dayStart,
-                      timestamp < dayEnd
+                      let timestamp = event.timestamp
                 else { continue }
 
                 let requestID = "codex_session:thread-v1:\(rootID):\(eventIndex)"
+                if timestamp > speedStart, timestamp <= now,
+                   speedRequestIDs.insert(requestID).inserted {
+                    recentOutput = recentOutput.addingClamped(event.delta.output)
+                }
+                guard timestamp >= dayStart, timestamp < dayEnd else { continue }
                 guard requestIDs.insert(requestID).inserted else { continue }
                 dailyInput = dailyInput.addingClamped(event.delta.input)
                 dailyCached = dailyCached.addingClamped(event.delta.cachedInput)
@@ -131,7 +137,8 @@ struct SessionUsageReader: Sendable {
             contextWindow: latest.contextWindow,
             rateLimits: latest.rateLimits,
             sourceFile: latest.sourceFile,
-            quotaTimestamp: latest.quotaTimestamp
+            quotaTimestamp: latest.quotaTimestamp,
+            averageOutputTokensPerSecond: deferredFiles == 0 ? Double(recentOutput) / 300 : nil
         )
     }
 

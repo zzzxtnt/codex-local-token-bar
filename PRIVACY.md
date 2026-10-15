@@ -1,6 +1,7 @@
 # Privacy
 
-Codex Token Bar is a strictly local-only macOS utility.
+Codex Token Bar calculates usage locally. The optional, manually triggered updater
+contacts GitHub; the whole application is therefore no longer network-free.
 
 ## Data it accesses
 
@@ -25,12 +26,21 @@ Bar does not copy the session files or persist their contents in its own databas
 
 ## Network and telemetry
 
-The app makes no network requests, including to OpenAI. There is no network
-client, analytics SDK, crash reporter, advertising, automatic updater, or telemetry.
-It never uploads logs or usage totals. Reset alerts use local macOS notifications,
+Usage and quota readers make no network requests, including to OpenAI.
+Only clicking **检查更新** contacts the public GitHub Releases API for this repository.
+Only clicking **下载并安装** downloads its checksum and DMG from GitHub and GitHub's
+release-asset CDN. There are no startup/periodic checks or silent installations.
+Requests use an ephemeral session without cookies, stored credentials or a GitHub
+token. GitHub receives normal connection metadata such as IP address and a fixed
+updater User-Agent, but no Codex data. macOS signature/notarization assessment may
+also contact Apple's trust services according to system policy.
+There is no analytics SDK, crash reporter, advertising, or telemetry.
+The app never uploads logs or usage totals. Reset alerts use local macOS notifications,
 not a remote push service. Notification text contains only window names and usage
 percentages, not account identities or file paths.
-Users check GitHub Releases for updates manually; the app does not contact GitHub.
+The updater accepts stable newer releases only, verifies SHA-256, the pinned
+Developer ID team and bundle identity, and Gatekeeper approval before replacing
+the application. It does not read Keychain credentials or disable system security.
 
 ## Local storage
 
@@ -43,14 +53,23 @@ The notification toggle and the timestamp of a manual “clear old quota” acti
 are stored in local app preferences. Detection baselines, deduplication, and the
 latest notice are held only in memory. macOS may retain delivered notifications.
 
+Manual updates create a private `.CodexTokenBar-update-<UUID>` folder next to the
+installed application. It contains staging files and a retained `Previous.app`
+backup after successful installation. A failed or interrupted update may leave
+these files for recovery. After confirming the new version works, users may remove
+that specific update folder. Codex logs and preferences are never moved by updates.
+A small `.CodexTokenBar-update.lock` file prevents concurrent installation; it
+contains no account or usage information.
+
 ## Tests
 
 Fixture tests use synthetic records. The live integration test reads the current
 user's local Codex sessions only when `CODEX_TOKEN_BAR_LIVE_TEST=1` is explicitly
 set by the developer.
-There are no credential or online integration tests. A source-boundary regression
-test rejects common network/credential APIs; behavior tests use synthetic logs
-and a fake notification sender, never an actual subscription reset.
+Default tests make no network requests and never trigger a subscription reset.
+Source-boundary tests reject credential APIs everywhere and network/process APIs
+outside the updater. Update tests inject metadata/download fixtures and exercise
+replacement/rollback only in temporary folders, not the user's installed app.
 
 ## Changes
 

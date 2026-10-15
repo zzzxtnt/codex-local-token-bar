@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.6 — 2026-10-15
+
+- Add manual GitHub Release checking, inline release notes, verified DMG download,
+  same-volume app replacement with retained backup, and restart/rollback handling.
+- Keep usage readers local-only; document the explicit GitHub update network
+  exception and macOS trust assessment. Never read account credentials.
+- Measure actual panel content instead of the proposed hosting size, avoiding
+  excess height and keeping update notes within the scrollable height limit.
+
+- Show trailing 5-minute average output tokens per second after the menu-bar
+  total. Reuse local deduplication/replay rules, cover midnight boundaries, and
+  show unavailable speed on failed or incomplete reads. No network access added.
+
 ## 0.1.5 — 2026-09-26
 
 - Fix notification API concurrency compatibility with Xcode 16.4 as well as newer

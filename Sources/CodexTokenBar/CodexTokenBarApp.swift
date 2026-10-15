@@ -6,6 +6,10 @@ import SwiftUI
 enum CodexTokenBarApp {
     @MainActor
     static func main() {
+        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--apply-update" {
+            UpdateInstaller.helper(work: URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true))
+            return
+        }
         // This is a menu-bar-only app. A placeholder SwiftUI Settings scene
         // still registers a real, empty window that activation can present.
         let application = NSApplication.shared
@@ -22,6 +26,7 @@ enum CodexTokenBarApp {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let model = UsageModel()
     private let resetNotifications = ResetNotificationController(sender: SystemResetNotifications())
+    private let updater = UpdateController()
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var observations = Set<AnyCancellable>()
@@ -43,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let controller = UsagePopoverController(
             model: model,
             notifications: resetNotifications,
+            updater: updater,
             onClose: { [weak self] in self?.closePopover() }
         )
         controller.attach(to: popover)
@@ -86,9 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func updateButton() {
         guard let button = statusItem?.button else { return }
-        button.title = " \(model.statusValue)"
+        button.title = " \(model.statusBarValue)"
         button.toolTip = model.localUsage.map {
-            "Codex 今日合计：\(TokenFormatter.exact($0.todayTotal.normalizedTotal)) tokens"
+            "Codex 今日合计：\(TokenFormatter.exact($0.todayTotal.normalizedTotal)) tokens\n近 5 分钟平均输出：\(model.speedValue)\n按本地记录估算，每 30 秒更新；包含空闲及工具等待，不是实时生成速度。— 表示数据不可用。"
         } ?? "Codex Token Bar 正在读取数据"
         button.setAccessibilityLabel(model.menuTitle)
     }

@@ -21,7 +21,11 @@ Codex Token Bar is intended to:
 
 - read local Codex token metadata;
 - avoid credentials, account identity, and Keychain access;
-- make no network requests, including to official endpoints;
+- keep usage readers network-free, with manual updates limited to the fixed
+  public GitHub repository and GitHub release CDN (no credentials/cookies);
+- reject changed identity, unexpected developer, invalid checksum/signature,
+  downgrade and unsupported installation locations before replacement;
+- preserve the previous app for recovery and never request elevated privileges;
 - never label unowned local quota logs as current-account or real-time truth;
 - use only local macOS notifications for suspected changes;
 - avoid persisting session contents;

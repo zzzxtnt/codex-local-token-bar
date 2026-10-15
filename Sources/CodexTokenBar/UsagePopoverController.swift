@@ -8,13 +8,15 @@ final class UsagePopoverController: NSHostingController<UsagePopover> {
     private var observations = Set<AnyCancellable>()
 
     init(model: UsageModel, notifications: ResetNotificationController,
+         updater: UpdateController = UpdateController(),
          onClose: @escaping () -> Void = {}) {
-        super.init(rootView: UsagePopover(model: model, notifications: notifications, onClose: onClose))
-        // NSPopover follows this size as records and inline warnings appear/disappear.
-        sizingOptions = [.preferredContentSize]
+        super.init(rootView: UsagePopover(model: model, notifications: notifications, updater: updater, onClose: onClose))
+        // Measure the actual unscrolled content; ViewThatFits' proposed size can
+        // include spare height on newer SDKs. Keep one sizing owner, not two.
+        sizingOptions = []
         // Schedule after @Published has applied its new value. This also keeps
         // the first opening correct when content changed while the panel was closed.
-        Publishers.Merge(model.objectWillChange, notifications.objectWillChange)
+        Publishers.Merge3(model.objectWillChange, notifications.objectWillChange, updater.objectWillChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.resizeToFit() }
             .store(in: &observations)
@@ -31,8 +33,9 @@ final class UsagePopoverController: NSHostingController<UsagePopover> {
     }
 
     private func resizeToFit() {
-        preferredContentSize = sizeThatFits(in: NSSize(
-            width: UsagePopover.panelWidth, height: UsagePopover.maximumHeight))
+        let content = NSHostingView(rootView: rootView.content.frame(width: UsagePopover.panelWidth))
+        preferredContentSize = NSSize(width: UsagePopover.panelWidth,
+            height: min(content.fittingSize.height, UsagePopover.maximumHeight))
         synchronizeSize()
     }
 

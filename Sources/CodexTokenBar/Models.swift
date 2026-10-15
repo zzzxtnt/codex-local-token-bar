@@ -106,6 +106,8 @@ struct LocalUsageSnapshot: Sendable {
     let rateLimits: SessionRateLimits?
     let sourceFile: URL
     let quotaTimestamp: Date?
+    /// Output recorded in the last 300 seconds / 300; not decode throughput.
+    let averageOutputTokensPerSecond: Double?
 
     init(
         timestamp: Date,
@@ -118,7 +120,8 @@ struct LocalUsageSnapshot: Sendable {
         contextWindow: UInt64?,
         rateLimits: SessionRateLimits?,
         sourceFile: URL,
-        quotaTimestamp: Date? = nil
+        quotaTimestamp: Date? = nil,
+        averageOutputTokensPerSecond: Double? = nil
     ) {
         self.timestamp = timestamp
         self.todayTotal = todayTotal ?? sessionTotal
@@ -131,6 +134,7 @@ struct LocalUsageSnapshot: Sendable {
         self.rateLimits = rateLimits
         self.sourceFile = sourceFile
         self.quotaTimestamp = quotaTimestamp
+        self.averageOutputTokensPerSecond = averageOutputTokensPerSecond
     }
 }
 

@@ -70,9 +70,23 @@ the new location.
 
 ## Update
 
-Codex Token Bar does not check for or install updates. Download the new disk
-image from GitHub Releases, quit the running app, and replace the copy in
-Applications. Your local Codex session files are not changed.
+From version 0.1.6, click **检查更新** next to the current version in the panel.
+If a newer stable release is available, read its notes and click **下载并安装**.
+Only these explicit actions contact GitHub. The app verifies the checksum,
+Developer ID team, bundle identity/version and Gatekeeper approval, then exits,
+replaces its installed bundle and restarts. There are no background updates.
+
+Automatic replacement requires a writable `/Applications/Codex Token Bar.app`
+or `~/Applications/Codex Token Bar.app`. Disk-image, renamed, read-only, ad-hoc
+and development copies must be updated manually; no administrator password is requested.
+For 0.1.5 and earlier, download the new DMG manually once to get the updater.
+Your Codex session files and preferences are not changed.
+
+Replacement or launch failure triggers rollback. A previous bundle is retained
+under `.CodexTokenBar-update-<UUID>/Previous.app` beside the installation; an
+interrupted update or power loss may require moving this backup back manually.
+After confirming the new version works, the corresponding update folder can be
+removed. A successful process launch is checked, not every future runtime behavior.
 
 ## Uninstall
 
@@ -94,7 +108,8 @@ Codex Token Bar reads token-count metadata from:
 - `~/.codex/archived_sessions`
 
 It does not read `~/.codex/auth.json`, account identity, or Keychain credentials,
-upload session files, send telemetry, or contact any server. Prompt and response records
+upload session files or send telemetry. Only the manual updater contacts GitHub;
+macOS may contact Apple to assess signed software. Prompt and response records
 in the JSONL files are ignored. The app does not require Full Disk Access for
 its normal location under your home folder. See [PRIVACY.md](../PRIVACY.md) for
 the full privacy boundary.

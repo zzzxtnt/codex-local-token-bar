@@ -55,8 +55,16 @@ final class UsageModel: ObservableObject {
 
     var menuTitle: String {
         guard let localUsage else { return "Codex —" }
-        return "Codex \(TokenFormatter.compact(localUsage.todayTotal.normalizedTotal))"
+        return "Codex \(TokenFormatter.compact(localUsage.todayTotal.normalizedTotal))，近 5 分钟平均输出 \(speedValue)"
     }
+
+    var speedValue: String {
+        guard localError == nil, let rate = localUsage?.averageOutputTokensPerSecond,
+              rate.isFinite, rate >= 0 else { return "— tok/s" }
+        return String(format: "%.1f tok/s", rate)
+    }
+
+    var statusBarValue: String { "\(statusValue) · \(speedValue)" }
 
     var statusValue: String {
         guard let localUsage else { return "—" }

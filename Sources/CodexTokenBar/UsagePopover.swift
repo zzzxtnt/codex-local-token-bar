@@ -7,6 +7,7 @@ struct UsagePopover: View {
 
     @ObservedObject var model: UsageModel
     @ObservedObject var notifications: ResetNotificationController
+    @ObservedObject var updater = UpdateController()
     var onClose: () -> Void = {}
 
     var body: some View {
@@ -59,9 +60,9 @@ struct UsagePopover: View {
         HStack(spacing: 8) {
             Text("Codex Token")
                 .font(.system(size: 13, weight: .semibold))
-            Text("纯本地")
+            Text("本地统计")
                 .font(.caption2).foregroundStyle(.secondary)
-                .help("不联网，不读取账号或登录信息。")
+                .help("统计只读本地日志，不读取账号或凭据。仅手动更新会连接 GitHub。")
             Spacer()
             if model.isRefreshing {
                 ProgressView().controlSize(.small)
@@ -142,7 +143,7 @@ struct UsagePopover: View {
     }
 
     private var footer: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             UsagePreferences(
                 resetNotificationsEnabled: Binding(
                     get: { notifications.enabled },
@@ -155,6 +156,37 @@ struct UsagePopover: View {
                 ),
                 launchAtLoginMessage: model.launchAtLoginMessage ?? "登录 Mac 后自动运行"
             )
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("v\(updater.currentVersion)").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if updater.busy { ProgressView().controlSize(.small) }
+                    Button(updater.release == nil ? "检查更新" : "下载并安装") {
+                        Task {
+                            if updater.release == nil { await updater.check() }
+                            else { await updater.downloadAndInstall() }
+                        }
+                    }
+                    .disabled(updater.busy)
+                    .help("点击才连接 GitHub；验证安装包后退出、替换并重启应用。")
+                }
+                if !updater.message.isEmpty {
+                    Text(updater.message).font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let release = updater.release {
+                    DisclosureGroup("更新说明 · v\(release.version)", isExpanded: $updater.notesExpanded) {
+                        ScrollView {
+                            Text(verbatim: release.notes).font(.caption2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }.frame(height: 90)
+                    }.font(.caption2)
+                    Button("重新检查") { Task { await updater.check() } }
+                        .buttonStyle(.plain).font(.caption2).disabled(updater.busy)
+                }
+            }
 
             HStack {
                 Button {

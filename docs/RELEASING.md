@@ -44,8 +44,8 @@ Then create the complete release. `RELEASE_VERSION` must not include the
 leading `v` used by the Git tag:
 
 ```sh
-RELEASE_VERSION=0.1.5 \
-BUILD_NUMBER=9 \
+RELEASE_VERSION=0.1.6 \
+BUILD_NUMBER=10 \
 SIGNING_IDENTITY="Developer ID Application: Your Organization (TEAMID)" \
 NOTARY_PROFILE=codex-token-bar \
 ./scripts/release-macos.sh
@@ -127,7 +127,9 @@ Test the final disk image on a Mac where this build has not been launched before
 4. Compare the displayed exact daily total with the live test or parity probe.
 5. Enable Launch at Login and confirm macOS reports it as enabled.
 6. Quit and reopen the app, then disable Launch at Login again.
-7. Confirm no network requests or credential reads, and no modification of `~/.codex`.
+7. Confirm no network requests before manually checking updates, no credential
+   reads, no statistics uploads, and no modification of `~/.codex`. Test update
+   version selection, checksum rejection, Developer ID verification and rollback.
 8. Confirm quota is labelled as unverified history. Clear old quota: it must stay
    hidden across restart until a newer record appears; token totals must not change.
 9. Verify notifications with synthetic log fixtures only: permission allowed/denied,

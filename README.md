@@ -14,6 +14,11 @@ another dashboard open.
 ## What it shows
 
 - Today's total token usage across all local Codex sessions
+- Trailing 5-minute average output speed beside the menu-bar total (`tok/s`),
+  refreshed every 30 seconds. Counts locally recorded output only, including any
+  reasoning already included in `output_tokens`, without adding reasoning twice.
+  Includes idle/tool time; this is not real-time model generation throughput.
+  Log batching can delay updates. Unavailable/incomplete reads show `—`, not zero.
 - Today's valid request count, input tokens, and output tokens
 - Today's cache hit rate with a progress bar (hover for exact cached/input counts)
 - Ordinary Codex rate-limit windows from local history, with record timestamps;
@@ -21,6 +26,8 @@ another dashboard open.
 - Optional macOS notifications for suspected resets observed in new local records
 - A compact, automatically refreshed value in the macOS menu bar
 - A content-sized panel that hides session IDs, filenames, and scanning details
+- Manual **检查更新** with current version and release notes, followed by explicit
+  **下载并安装** from this repository's signed GitHub Release DMG
 
 The app runs as a menu bar accessory, does not show a Dock icon, and provides an
 opt-in switch for starting automatically when you sign in to macOS.
@@ -60,7 +67,9 @@ meter, subscription quota, or remaining-credit counter.
 
 ## Privacy
 
-- Local-only: no network requests, including to OpenAI.
+- Usage/quota statistics stay local-only. Manual update checks/downloads contact
+  GitHub; there are no startup or background update requests. macOS may contact
+  Apple for signature/notarization trust checks during installation.
 - No login information: no access to `auth.json`, account IDs, API keys, or Keychain.
 - No telemetry or analytics.
 - Prompt and message records are ignored; only session metadata and token-count
@@ -69,8 +78,10 @@ meter, subscription quota, or remaining-credit counter.
 Codex session files can contain sensitive content. This app processes the files
 on your Mac and does not copy or upload them.
 
-The app has no automatic updater. Checking GitHub for a newer version is a
-manual action and is not performed by the app.
+Updates are manual: click **检查更新**, then **下载并安装** after reading the notes.
+The app validates the signed DMG before replacement and restart, retaining a backup.
+It never checks or installs in the background. Earlier versions need one manual
+DMG installation to gain this feature; see [updating](docs/INSTALL.md#update).
 
 ## Requirements
 
@@ -189,8 +200,10 @@ Codex Token Bar 是一个原生 macOS 菜单栏应用，从本机 `~/.codex` 会
 进度条，悬停可查看缓存命中与输入 token 的精确数量。面板高度随内容自动调整，
 会话 ID、日志文件名和扫描数量等技术细节不再展示，也不会弹出独立的空白设置窗口。
 
-应用严格纯本地：不读取登录凭据、账号 ID、钥匙串或浏览器信息，不向官方或第三方
-发送任何请求。额度仅是本地历史记录，无法自动识别换号，也不保证属于当前账号；
+统计保持纯本地：不读取登录凭据、账号 ID、钥匙串或浏览器信息，不上传日志或用量。
+仅点击“检查更新”和“下载并安装”时连接 GitHub；系统安装验证可能访问 Apple。
+菜单栏总量后显示近 5 分钟平均输出 tok/s，不是实时生成速度。
+额度仅是本地历史记录，无法自动识别换号，也不保证属于当前账号；
 换号后请点击“清除旧额度”。这只隐藏旧记录，不删除日志、不影响 Token 总量。
 新日志连续两次显示额度恢复时，可弹出“疑似重置或账号切换”通知；无新日志就无法检测，
 可能延迟或漏报。首次须允许系统通知，专注模式也可能抑制弹窗。不会主动重置额度。
