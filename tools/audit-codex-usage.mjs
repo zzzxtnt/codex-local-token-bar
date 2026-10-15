@@ -12,6 +12,18 @@ const dayStart = new Date(`${day}T00:00:00`).getTime();
 const dayEnd = new Date(`${day}T24:00:00`).getTime();
 const roots = [path.join(codexRoot, "sessions"), path.join(codexRoot, "archived_sessions")];
 
+function threadId(file) {
+  const name = path.basename(file, ".jsonl");
+  const components = name.split("_");
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  // Resumed logs can append a rollout UUID after the thread UUID.
+  const threadName = components.length === 2
+    && uuid.test(components[0].slice(-36)) && uuid.test(components[1])
+    ? components[0] : name;
+  const candidate = threadName.slice(-36);
+  return uuid.test(candidate) ? candidate.toLowerCase() : null;
+}
+
 function walk(directory, output) {
   if (!fs.existsSync(directory)) return;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -25,9 +37,8 @@ const allFiles = [];
 for (const root of roots) walk(root, allFiles);
 const rolloutIndex = new Map();
 for (const file of allFiles) {
-  const match = file.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i);
-  if (!match) continue;
-  const id = match[1].toLowerCase();
+  const id = threadId(file);
+  if (!id) continue;
   if (!rolloutIndex.has(id)) rolloutIndex.set(id, []);
   rolloutIndex.get(id).push(file);
 }
@@ -67,8 +78,7 @@ function parse(file) {
   if (cache.has(file)) return cache.get(file);
   const result = { rootId: null, rootTimestamp: null, rootMetaSeen: false, parentId: null, deferred: false, events: [] };
   cache.set(file, result);
-  const match = file.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i);
-  result.rootId = match?.[1]?.toLowerCase() || null;
+  result.rootId = threadId(file);
 
   let highWater = null;
   const signaturesBySource = new Map();

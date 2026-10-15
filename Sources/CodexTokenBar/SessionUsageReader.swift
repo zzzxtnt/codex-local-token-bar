@@ -426,7 +426,14 @@ struct SessionUsageReader: Sendable {
     }
 
     private func threadID(from file: URL) -> String? {
-        let name = file.deletingPathExtension().lastPathComponent
+        var name = file.deletingPathExtension().lastPathComponent
+        // Resumed logs can append a rollout UUID after the thread UUID.
+        let components = name.split(separator: "_", omittingEmptySubsequences: false)
+        if components.count == 2,
+           UUID(uuidString: String(components[0].suffix(36))) != nil,
+           UUID(uuidString: String(components[1])) != nil {
+            name = String(components[0])
+        }
         guard name.count >= 36 else { return nil }
         let candidate = String(name.suffix(36)).lowercased()
         return UUID(uuidString: candidate) == nil ? nil : candidate
