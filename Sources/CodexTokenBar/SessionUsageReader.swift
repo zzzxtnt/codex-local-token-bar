@@ -51,8 +51,9 @@ struct SessionUsageReader: Sendable {
 
         func parsed(_ file: URL) throws -> ParsedCodexFile {
             if let cached = parsedCache[file] { return cached }
-            let value = try parseCodexFile(file)
-            parsedCache[file] = value
+            let related = threadID(from: file).flatMap { rolloutIndex[$0] } ?? [file]
+            let value = try parseCodexFile(file, relatedFiles: related)
+            for candidate in related { parsedCache[candidate] = value }
             return value
         }
 
@@ -63,6 +64,19 @@ struct SessionUsageReader: Sendable {
         var dailyCached: UInt64 = 0
         var dailyOutput: UInt64 = 0
         var deferredFiles = 0
+        var speedIncomplete = false
+
+        func deferFile(_ data: ParsedCodexFile) {
+            deferredFiles += 1
+            // Daily attribution failures outside the speed window must not hide
+            // valid recent output. Unknown timestamps remain conservative.
+            if data.events.contains(where: { event in
+                guard let timestamp = event.timestamp else { return true }
+                return timestamp > speedStart && timestamp <= now
+            }) {
+                speedIncomplete = true
+            }
+        }
 
         for file in selectedFiles {
             let fileData = try parsed(file)
@@ -70,7 +84,7 @@ struct SessionUsageReader: Sendable {
                   fileData.rootMetaSeen,
                   !fileData.isDeferred
             else {
-                deferredFiles += 1
+                deferFile(fileData)
                 continue
             }
 
@@ -80,7 +94,7 @@ struct SessionUsageReader: Sendable {
                       let candidates = rolloutIndex[parentID],
                       !candidates.isEmpty
                 else {
-                    deferredFiles += 1
+                    deferFile(fileData)
                     continue
                 }
 
@@ -93,7 +107,7 @@ struct SessionUsageReader: Sendable {
                 guard let first = parentSnapshots.first,
                       parentSnapshots.dropFirst().allSatisfy({ $0 == first })
                 else {
-                    deferredFiles += 1
+                    deferFile(fileData)
                     continue
                 }
                 replayPrefix = matchingReplayPrefix(child: fileData.events, parent: first)
@@ -138,7 +152,8 @@ struct SessionUsageReader: Sendable {
             rateLimits: latest.rateLimits,
             sourceFile: latest.sourceFile,
             quotaTimestamp: latest.quotaTimestamp,
-            averageOutputTokensPerSecond: deferredFiles == 0 ? Double(recentOutput) / 300 : nil
+            averageOutputTokensPerSecond: speedIncomplete ? nil : Double(recentOutput) / 300,
+            outputSpeedIsPartial: speedIncomplete
         )
     }
 
@@ -300,16 +315,47 @@ struct SessionUsageReader: Sendable {
         return nil
     }
 
-    private func parseCodexFile(_ file: URL) throws -> ParsedCodexFile {
-        let data = try Data(contentsOf: file, options: [.mappedIfSafe])
+    private func parseCodexFile(_ file: URL, relatedFiles: [URL]) throws -> ParsedCodexFile {
+        // A resumed session can span several files. Merge its timestamped token
+        // records before deriving deltas and request indexes, so copied prefixes
+        // and cumulative counters share a single high-water mark.
+        var records: [(line: Data, timestamp: Date, order: Int)] = []
+        var missingMetadata = false
+        for candidate in relatedFiles.sorted(by: { $0.path < $1.path }) {
+            let data = try Data(contentsOf: candidate, options: [.mappedIfSafe])
+            var candidateHasMetadata = false
+            var candidateHasTokenInfo = false
+            for rawLine in data.split(separator: 0x0A, omittingEmptySubsequences: true) {
+                let line = Data(rawLine)
+                guard line.range(of: Self.sessionMetaMarker) != nil
+                    || line.range(of: Self.tokenCountMarker) != nil else { continue }
+                let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
+                if object?["type"] as? String == "session_meta" { candidateHasMetadata = true }
+                if object?["type"] as? String == "event_msg",
+                   let payload = object?["payload"] as? [String: Any],
+                   payload["type"] as? String == "token_count", payload["info"] is [String: Any] {
+                    candidateHasTokenInfo = true
+                }
+                let timestamp = CodexJSON.parseDate(object?["timestamp"] as? String) ?? .distantPast
+                records.append((line, timestamp, records.count))
+            }
+            if candidateHasTokenInfo && !candidateHasMetadata { missingMetadata = true }
+        }
+        if relatedFiles.count > 1 {
+            records.sort {
+                $0.timestamp == $1.timestamp ? $0.order < $1.order : $0.timestamp < $1.timestamp
+            }
+        }
         var result = ParsedCodexFile(rootThreadID: threadID(from: file))
+        result.isDeferred = missingMetadata
         var highWater: DeltaTokens?
         var signaturesBySource: [String: TokenUsageSignature] = [:]
         var previousSignature: TokenUsageSignature?
         var eventIndex = 0
+        var mergedEvents = Set<MergedTokenIdentity>()
 
-        for rawLine in data.split(separator: 0x0A, omittingEmptySubsequences: true) {
-            let line = Data(rawLine)
+        for record in records {
+            let line = record.line
             let isSessionMeta = line.range(of: Self.sessionMetaMarker) != nil
             let isTokenEvent = line.range(of: Self.tokenCountMarker) != nil
             guard isSessionMeta || isTokenEvent,
@@ -317,9 +363,10 @@ struct SessionUsageReader: Sendable {
                   let type = object["type"] as? String
             else { continue }
 
-            if type == "session_meta", !result.rootMetaSeen {
+            if type == "session_meta" {
+                let wasSeen = result.rootMetaSeen
                 result.rootMetaSeen = true
-                result.rootTimestamp = CodexJSON.parseDate(object["timestamp"] as? String)
+                if !wasSeen { result.rootTimestamp = CodexJSON.parseDate(object["timestamp"] as? String) }
                 let payload = object["payload"] as? [String: Any] ?? [:]
                 let forked = nonEmptyString(payload["forked_from_id"])
                 let source = payload["source"] as? [String: Any]
@@ -330,7 +377,9 @@ struct SessionUsageReader: Sendable {
                 if let forked, let spawned, forked.lowercased() != spawned.lowercased() {
                     result.isDeferred = true
                 } else {
-                    result.parentThreadID = (forked ?? spawned)?.lowercased()
+                    let parent = (forked ?? spawned)?.lowercased()
+                    if wasSeen, parent != result.parentThreadID { result.isDeferred = true }
+                    else { result.parentThreadID = parent }
                 }
 
                 let metadataID = nonEmptyString(payload["id"])
@@ -359,6 +408,10 @@ struct SessionUsageReader: Sendable {
 
             let rateLimits = payload["rate_limits"] as? [String: Any]
             let source = nonEmptyString(rateLimits?["limit_id"]) ?? "__default__"
+            if relatedFiles.count > 1, let timestamp = CodexJSON.parseDate(object["timestamp"] as? String),
+               !mergedEvents.insert(MergedTokenIdentity(timestamp: timestamp, signature: signature, source: source)).inserted {
+                continue
+            }
             let isDuplicate = total != nil
                 && (signaturesBySource[source] == signature || previousSignature == signature)
             if total != nil { signaturesBySource[source] = signature }
@@ -427,8 +480,12 @@ struct SessionUsageReader: Sendable {
 
     private func threadID(from file: URL) -> String? {
         let name = file.deletingPathExtension().lastPathComponent
-        guard name.count >= 36 else { return nil }
-        let candidate = String(name.suffix(36)).lowercased()
+        let parts = name.split(separator: "_", omittingEmptySubsequences: false)
+        guard parts.count == 1 || (parts.count == 2 && UUID(uuidString: String(parts[1])) != nil),
+              let base = parts.first, base.count >= 36 else { return nil }
+        // Codex can append a file/continuation UUID after the session UUID.
+        // Metadata must still match this canonical session ID below.
+        let candidate = String(base.suffix(36)).lowercased()
         return UUID(uuidString: candidate) == nil ? nil : candidate
     }
 
@@ -504,6 +561,12 @@ private struct DeltaTokens {
 
     static let zero = DeltaTokens(input: 0, cachedInput: 0, output: 0)
     var isZero: Bool { input == 0 && cachedInput == 0 && output == 0 }
+}
+
+private struct MergedTokenIdentity: Hashable {
+    let timestamp: Date
+    let signature: TokenUsageSignature
+    let source: String
 }
 
 private struct ParsedTokenEvent {

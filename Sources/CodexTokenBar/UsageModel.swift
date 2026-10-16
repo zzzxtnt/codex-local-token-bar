@@ -59,7 +59,8 @@ final class UsageModel: ObservableObject {
     }
 
     var speedValue: String {
-        guard localError == nil, let rate = localUsage?.averageOutputTokensPerSecond,
+        guard localError == nil, localUsage?.outputSpeedIsPartial != true,
+              let rate = localUsage?.averageOutputTokensPerSecond,
               rate.isFinite, rate >= 0 else { return "— tok/s" }
         return String(format: "%.1f tok/s", rate)
     }

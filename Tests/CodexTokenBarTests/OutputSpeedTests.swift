@@ -4,6 +4,16 @@ import Testing
 
 @MainActor
 struct OutputSpeedTests {
+    @Test func genuinelyIncompleteSpeedIsNotPresentedAsComplete() async {
+        let model = UsageModel(startAutomatically: false, readLocal: {
+            LocalUsageSnapshot(timestamp: Date(), sessionTotal: .zero,
+                lastRequest: nil, contextWindow: nil, rateLimits: nil,
+                sourceFile: URL(fileURLWithPath: "/fixture.jsonl"),
+                averageOutputTokensPerSecond: 3.19, outputSpeedIsPartial: true)
+        }, readQuota: { nil })
+        await model.refresh()
+        #expect(model.speedValue == "— tok/s")
+    }
     @Test func menuBarShowsAverageAfterTotalAndHidesSpeedOnReadFailure() async {
         let source = SpeedFixture()
         let model = UsageModel(startAutomatically: false, readLocal: { try source.read() }, readQuota: { nil })

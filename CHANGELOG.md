@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.8 — 2026-10-16
+
+- Attribute continuation filenames to their original session UUID, not the
+  appended file UUID. Merge related local records before deriving token deltas
+  and request indexes; deduplicate copied prefixes and preserve fork replay rules.
+- Restore complete five-minute output speed without a lower-bound indicator.
+  Genuine recent attribution conflicts remain unavailable rather than appearing
+  complete. No account access or network usage was added to statistics.
+- Cover continuation, copied-prefix, previous-day baseline, fork-parent, and
+  conflicting-metadata cases with regression tests.
+- Local installation build; no GitHub Release installer published for this version.
+
 ## 0.1.6 — 2026-10-15
 
 - Add manual GitHub Release checking, inline release notes, verified DMG download,

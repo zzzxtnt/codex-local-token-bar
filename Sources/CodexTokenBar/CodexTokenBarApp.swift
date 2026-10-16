@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard let button = statusItem?.button else { return }
         button.title = " \(model.statusBarValue)"
         button.toolTip = model.localUsage.map {
-            "Codex 今日合计：\(TokenFormatter.exact($0.todayTotal.normalizedTotal)) tokens\n近 5 分钟平均输出：\(model.speedValue)\n按本地记录估算，每 30 秒更新；包含空闲及工具等待，不是实时生成速度。— 表示数据不可用。"
+            "Codex 今日合计：\(TokenFormatter.exact($0.todayTotal.normalizedTotal)) tokens\n近 5 分钟平均输出：\(model.speedValue)\n按本地记录统计，每 30 秒更新；包含空闲及工具等待，不是实时生成速度。— 表示读取失败、尚无数据或近期记录无法安全归属。"
         } ?? "Codex Token Bar 正在读取数据"
         button.setAccessibilityLabel(model.menuTitle)
     }

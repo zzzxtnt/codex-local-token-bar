@@ -18,7 +18,9 @@ another dashboard open.
   refreshed every 30 seconds. Counts locally recorded output only, including any
   reasoning already included in `output_tokens`, without adding reasoning twice.
   Includes idle/tool time; this is not real-time model generation throughput.
-  Log batching can delay updates. Unavailable/incomplete reads show `—`, not zero.
+  Log batching can delay updates. Continuation filenames with an appended UUID
+  are attributed to the original session, with records merged before deduplication.
+  Unavailable, failed, or genuinely incomplete reads show `—`, not a lower bound.
 - Today's valid request count, input tokens, and output tokens
 - Today's cache hit rate with a progress bar (hover for exact cached/input counts)
 - Ordinary Codex rate-limit windows from local history, with record timestamps;
@@ -203,6 +205,7 @@ Codex Token Bar 是一个原生 macOS 菜单栏应用，从本机 `~/.codex` 会
 统计保持纯本地：不读取登录凭据、账号 ID、钥匙串或浏览器信息，不上传日志或用量。
 仅点击“检查更新”和“下载并安装”时连接 GitHub；系统安装验证可能访问 Apple。
 菜单栏总量后显示近 5 分钟平均输出 tok/s，不是实时生成速度。
+支持带附加 UUID 的续写日志：使用原会话编号归属，跨文件合并后计算增量并去重，不再显示 `≥` 下限。真正无法安全归属的近期记录、尚无数据或读取失败仍显示 `—`，不会将不完整统计伪装为完整速度。
 额度仅是本地历史记录，无法自动识别换号，也不保证属于当前账号；
 换号后请点击“清除旧额度”。这只隐藏旧记录，不删除日志、不影响 Token 总量。
 新日志连续两次显示额度恢复时，可弹出“疑似重置或账号切换”通知；无新日志就无法检测，

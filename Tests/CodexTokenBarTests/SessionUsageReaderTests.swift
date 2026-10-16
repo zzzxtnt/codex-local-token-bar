@@ -3,6 +3,31 @@ import Testing
 @testable import CodexTokenBar
 
 struct SessionUsageReaderTests {
+    @Test func appendedFileIdentifierKeepsSessionAndMergesContinuation() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = "11111111-1111-4111-8111-111111111111"
+        let suffix = "22222222-2222-4222-8222-222222222222"
+        let now = try #require(CodexJSON.parseDate("2026-10-16T00:05:00Z"))
+        let meta = sessionMeta(id: id, timestamp: "2026-10-16T00:00:00Z")
+        let first = tokenEvent(totalInput: 100, cached: 0, output: 300, timestamp: "2026-10-16T00:01:00Z")
+        let second = tokenEvent(totalInput: 200, cached: 0, output: 600, timestamp: "2026-10-16T00:04:00Z")
+        try write([meta, first], id: id, to: root)
+        try write([meta, second], id: "\(id)_\(suffix)", to: root)
+        let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
+        #expect(value.deferredFileCount == 0)
+        #expect(!value.outputSpeedIsPartial)
+        #expect(value.averageOutputTokensPerSecond == 2)
+        #expect(value.todayTotal.outputTokens == 600)
+        #expect(value.todayRequestCount == 2)
+        // A copied prefix must not double count; nor may repeated per-file
+        // event indexes discard the continuation's first new request.
+        try write([meta, first, second], id: "\(id)_\(suffix)", to: root)
+        let copied = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
+        #expect(copied.averageOutputTokensPerSecond == 2)
+        #expect(copied.todayRequestCount == 2)
+    }
     @Test func decodesLatestTokenEventAndDoesNotDoubleCountCache() throws {
         let earlier = """
         {"timestamp":"2026-08-29T01:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"total_tokens":120},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"total_tokens":120},"model_context_window":258400}}}
@@ -20,6 +45,50 @@ struct SessionUsageReaderTests {
         #expect(snapshot.lastRequest?.cacheHitRate == 0.8)
         #expect(snapshot.rateLimits?.primary?.usedPercent == 12)
         #expect(snapshot.rateLimits?.primary?.durationSeconds == 18_000)
+    }
+
+    @Test func continuationUsesOlderBaselineAndResolvesForkParent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let parent = "11111111-1111-4111-8111-111111111111"
+        let suffix = "22222222-2222-4222-8222-222222222222"
+        let child = "33333333-3333-4333-8333-333333333333"
+        let meta = sessionMeta(id: parent, timestamp: "2026-10-15T10:00:00Z")
+        try write([meta, tokenEvent(totalInput: 100, cached: 0, output: 300,
+                                   timestamp: "2026-10-15T10:00:01Z")], id: parent, to: root)
+        try FileManager.default.setAttributes([.modificationDate: try #require(CodexJSON.parseDate("2026-10-15T10:01:00Z"))],
+            ofItemAtPath: root.appendingPathComponent("rollout-\(parent).jsonl").path)
+        let recent = tokenEvent(totalInput: 200, cached: 0, output: 600, timestamp: "2026-10-16T00:01:00Z")
+        try write([meta, recent], id: "\(parent)_\(suffix)", to: root)
+        try write([sessionMeta(id: child, parentID: parent, timestamp: "2026-10-16T00:02:00Z"),
+                   tokenEvent(totalInput: 200, cached: 0, output: 600, timestamp: "2026-10-16T00:02:01Z"),
+                   tokenEvent(totalInput: 300, cached: 0, output: 900, timestamp: "2026-10-16T00:03:00Z")], id: child, to: root)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(
+            now: try #require(CodexJSON.parseDate("2026-10-16T00:04:00Z")), calendar: calendar)
+        #expect(value.deferredFileCount == 0)
+        #expect(value.todayTotal.outputTokens == 600)
+        #expect(value.todayRequestCount == 2)
+        #expect(value.averageOutputTokensPerSecond == 2)
+    }
+
+    @Test func continuationDoesNotBorrowMissingOrConflictingMetadata() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = "11111111-1111-4111-8111-111111111111"
+        let suffix = "22222222-2222-4222-8222-222222222222"
+        let event = tokenEvent(totalInput: 100, cached: 0, output: 300, timestamp: "2026-10-16T00:01:00Z")
+        try write([sessionMeta(id: id, timestamp: "2026-10-16T00:00:00Z"), event], id: id, to: root)
+        let now = try #require(CodexJSON.parseDate("2026-10-16T00:04:00Z"))
+        for lines in [[event], [sessionMeta(id: suffix, timestamp: "2026-10-16T00:00:00Z"), event]] {
+            try write(lines, id: "\(id)_\(suffix)", to: root)
+            let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
+            #expect(value.averageOutputTokensPerSecond == nil)
+            #expect(value.outputSpeedIsPartial)
+        }
     }
 
     @Test func scansTemporaryCodexDirectory() throws {
@@ -129,7 +198,7 @@ struct SessionUsageReaderTests {
         #expect(idle.averageOutputTokensPerSecond == 0)
     }
 
-    @Test func speedIsUnavailableWhenSessionCannotBeAttributed() throws {
+    @Test func speedIsMarkedPartialWhenSessionCannotBeAttributed() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -139,6 +208,36 @@ struct SessionUsageReaderTests {
                   id: "11111111-1111-4111-8111-111111111111", to: root)
         let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
         #expect(value.averageOutputTokensPerSecond == nil)
+        #expect(value.outputSpeedIsPartial)
+    }
+
+    @Test func oldUnattributedEventsDoNotHideCurrentSpeed() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let now = Date()
+        let formatter = ISO8601DateFormatter()
+        let id = "11111111-1111-4111-8111-111111111111"
+        try write([sessionMeta(id: id, timestamp: formatter.string(from: now.addingTimeInterval(-600))),
+                   tokenEvent(totalInput: 1, cached: 0, output: 300,
+                              timestamp: formatter.string(from: now.addingTimeInterval(-10)))], id: id, to: root)
+        try write([tokenEvent(totalInput: 1, cached: 0, output: 600,
+                             timestamp: formatter.string(from: now.addingTimeInterval(-600)))],
+                  id: "22222222-2222-4222-8222-222222222222", to: root)
+        let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
+        #expect(value.deferredFileCount == 1)
+        #expect(value.averageOutputTokensPerSecond == 1)
+        #expect(!value.outputSpeedIsPartial)
+        // Same failure pattern as the real logs: a filename/metadata mismatch
+        // with recent output must not suppress other safely attributed sessions.
+        try write([sessionMeta(id: id, timestamp: formatter.string(from: now)),
+                   tokenEvent(totalInput: 1, cached: 0, output: 600,
+                              timestamp: formatter.string(from: now.addingTimeInterval(-10)))],
+                  id: "22222222-2222-4222-8222-222222222222", to: root)
+        let partial = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
+        #expect(partial.averageOutputTokensPerSecond == nil)
+        #expect(partial.outputSpeedIsPartial)
+        #expect(partial.todayTotal.normalizedTotal == value.todayTotal.normalizedTotal)
     }
 
     @Test func speedIncludesFileLastModifiedBeforeMidnight() throws {
@@ -178,6 +277,10 @@ struct SessionUsageReaderTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["CODEX_TOKEN_BAR_LIVE_TEST"] == "1"))
     func readsLiveCodexSnapshot() throws {
         let snapshot = try SessionUsageReader().dailySnapshot()
+        print("SPEED_CHECK deferred=\(snapshot.deferredFileCount) speed=\(String(describing: snapshot.averageOutputTokensPerSecond))")
+        #expect(snapshot.averageOutputTokensPerSecond != nil)
+        let partial = snapshot.outputSpeedIsPartial
+        #expect(!partial)
         #expect(snapshot.todayTotal.normalizedTotal > 0)
         print(
             "LIVE_SNAPSHOT today_total=\(snapshot.todayTotal.normalizedTotal) "
@@ -186,7 +289,7 @@ struct SessionUsageReaderTests {
                 + "cache_hit=\(String(format: "%.1f%%", snapshot.todayTotal.cacheHitRate * 100)) "
                 + "session_total=\(snapshot.sessionTotal.normalizedTotal) "
                 + "last_request=\(snapshot.lastRequest?.normalizedTotal ?? 0) "
-                + "file=\(snapshot.sourceFile.lastPathComponent)"
+                + "local_only=true"
         )
     }
 
