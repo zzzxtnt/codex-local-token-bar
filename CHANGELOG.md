@@ -12,7 +12,8 @@ All notable changes to this project will be documented in this file.
   complete. No account access or network usage was added to statistics.
 - Cover continuation, copied-prefix, previous-day baseline, fork-parent, and
   conflicting-metadata cases with regression tests.
-- Local installation build; no GitHub Release installer published for this version.
+- Distribute a signed, notarized universal DMG through GitHub Releases for manual
+  installation and the application's user-initiated update flow.
 
 ## 0.1.6 — 2026-10-15
 
