@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.10 — 2026-10-18
+
+- Replace the hand-drawn trend with native Swift Charts, pointer selection,
+  timestamped sample readouts and explicit unavailable states; no new dependency.
+- Recognize inherited direct-parent metadata inside fork logs without rejecting
+  the child's new output. Preserve replay deduplication and reject unrelated IDs.
+- Move preferences, update checking, refresh and quit into an in-panel settings
+  page. Replace the bottom controls with a compact ten-minute speed trend table.
+- Keep trend samples in bounded memory only; failures and long pauses create
+  gaps rather than fabricated zero values. History clears when the app exits.
+
+- Shorten average output speed to the trailing 60 seconds, preserving local-only
+  reading and the 30-second automatic refresh interval.
+- Manual refresh waits for in-flight token/quota reads and requests fresh data
+  instead of silently skipping; show progress until both reads finish.
+
 ## 0.1.8 — 2026-10-16
 
 - Attribute continuation filenames to their original session UUID, not the

@@ -24,7 +24,15 @@ struct UsagePopover: View {
     }
 
     // Kept separate so offline layout tests can verify the unscrolled content height.
-    var content: some View {
+    @ViewBuilder var content: some View {
+        if model.showingSettings {
+            settingsContent.padding(12)
+        } else {
+            dashboard
+        }
+    }
+
+    private var dashboard: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
 
@@ -49,7 +57,8 @@ struct UsagePopover: View {
 
             Divider()
             quotaSection
-            footer
+            Divider()
+            SpeedTrendView(history: model.speedHistory, currentValue: model.speedValue)
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -67,6 +76,12 @@ struct UsagePopover: View {
             if model.isRefreshing {
                 ProgressView().controlSize(.small)
             }
+            Button { model.showingSettings = true } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(.plain)
+            .help("设置、刷新与更新")
+            .accessibilityLabel("设置")
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }
@@ -142,8 +157,17 @@ struct UsagePopover: View {
         }
     }
 
-    private var footer: some View {
-        VStack(spacing: 4) {
+    var settingsContent: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Button { model.showingSettings = false } label: {
+                    Label("返回", systemImage: "chevron.left")
+                }.buttonStyle(.plain).font(.caption)
+                Text("设置").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button(action: onClose) { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).accessibilityLabel("关闭面板")
+            }
             UsagePreferences(
                 resetNotificationsEnabled: Binding(
                     get: { notifications.enabled },
@@ -192,9 +216,10 @@ struct UsagePopover: View {
                 Button {
                     Task { await model.refresh() }
                 } label: {
-                    Label("刷新", systemImage: "arrow.clockwise")
+                    Label(model.isManuallyRefreshing ? "刷新中…" : "刷新", systemImage: "arrow.clockwise")
                 }
-                .disabled(model.isRefreshing)
+                .disabled(model.isManuallyRefreshing)
+                .help("重新读取本地 Token 总量、额度和近 1 分钟输出速度")
 
                 Spacer()
 

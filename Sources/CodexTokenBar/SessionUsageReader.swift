@@ -43,7 +43,7 @@ struct SessionUsageReader: Sendable {
             return (id, file)
         }, by: { $0.0 }).mapValues { $0.map(\.1) }
 
-        let speedStart = now.addingTimeInterval(-300)
+        let speedStart = now.addingTimeInterval(-60)
         let selectedFiles = allFiles.filter { modificationDate(for: $0) >= min(dayStart, speedStart) }.sorted {
             $0.path < $1.path
         }
@@ -152,7 +152,7 @@ struct SessionUsageReader: Sendable {
             rateLimits: latest.rateLimits,
             sourceFile: latest.sourceFile,
             quotaTimestamp: latest.quotaTimestamp,
-            averageOutputTokensPerSecond: speedIncomplete ? nil : Double(recentOutput) / 300,
+            averageOutputTokensPerSecond: speedIncomplete ? nil : Double(recentOutput) / 60,
             outputSpeedIsPartial: speedIncomplete
         )
     }
@@ -330,7 +330,12 @@ struct SessionUsageReader: Sendable {
                 guard line.range(of: Self.sessionMetaMarker) != nil
                     || line.range(of: Self.tokenCountMarker) != nil else { continue }
                 let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any]
-                if object?["type"] as? String == "session_meta" { candidateHasMetadata = true }
+                if object?["type"] as? String == "session_meta",
+                   let payload = object?["payload"] as? [String: Any] {
+                    let id = nonEmptyString(payload["id"]) ?? nonEmptyString(payload["thread_id"])
+                        ?? nonEmptyString(payload["threadId"])
+                    if id == nil || id?.lowercased() == threadID(from: candidate) { candidateHasMetadata = true }
+                }
                 if object?["type"] as? String == "event_msg",
                    let payload = object?["payload"] as? [String: Any],
                    payload["type"] as? String == "token_count", payload["info"] is [String: Any] {
@@ -364,10 +369,19 @@ struct SessionUsageReader: Sendable {
             else { continue }
 
             if type == "session_meta" {
+                let payload = object["payload"] as? [String: Any] ?? [:]
+                let metadataID = nonEmptyString(payload["id"])
+                    ?? nonEmptyString(payload["thread_id"])
+                    ?? nonEmptyString(payload["threadId"])
+                // A fork may embed its parent's metadata after its own header.
+                // Only the explicitly declared direct parent is inherited; an
+                // unrelated ID remains a conflict, and every file needs its own header.
+                if result.rootMetaSeen, let metadataID,
+                   metadataID.lowercased() == result.parentThreadID,
+                   metadataID.lowercased() != result.rootThreadID { continue }
                 let wasSeen = result.rootMetaSeen
                 result.rootMetaSeen = true
                 if !wasSeen { result.rootTimestamp = CodexJSON.parseDate(object["timestamp"] as? String) }
-                let payload = object["payload"] as? [String: Any] ?? [:]
                 let forked = nonEmptyString(payload["forked_from_id"])
                 let source = payload["source"] as? [String: Any]
                 let subagent = source?["subagent"] as? [String: Any]
@@ -382,9 +396,6 @@ struct SessionUsageReader: Sendable {
                     else { result.parentThreadID = parent }
                 }
 
-                let metadataID = nonEmptyString(payload["id"])
-                    ?? nonEmptyString(payload["thread_id"])
-                    ?? nonEmptyString(payload["threadId"])
                 if let metadataID, let rootID = result.rootThreadID,
                    metadataID.lowercased() != rootID {
                     result.isDeferred = true

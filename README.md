@@ -13,9 +13,15 @@ another dashboard open.
 
 ## What it shows
 
+The gear button opens settings inside the same panel (reminders, launch at login,
+updates, refresh and quit). The bottom speed trend shows ten minutes of in-memory
+samples; every point is a trailing one-minute output average. Failures or sampling
+pauses create gaps. No history is written to disk or uploaded; it clears on exit.
+
 - Today's total token usage across all local Codex sessions
-- Trailing 5-minute average output speed beside the menu-bar total (`tok/s`),
-  refreshed every 30 seconds. Counts locally recorded output only, including any
+- Trailing 1-minute average output speed beside the menu-bar total (`tok/s`),
+  refreshed every 30 seconds. Manual refresh rereads totals, quota and speed,
+  waiting for in-flight reads before requesting fresh data. Counts locally recorded output only, including any
   reasoning already included in `output_tokens`, without adding reasoning twice.
   Includes idle/tool time; this is not real-time model generation throughput.
   Log batching can delay updates. Continuation filenames with an appended UUID
@@ -204,7 +210,9 @@ Codex Token Bar 是一个原生 macOS 菜单栏应用，从本机 `~/.codex` 会
 
 统计保持纯本地：不读取登录凭据、账号 ID、钥匙串或浏览器信息，不上传日志或用量。
 仅点击“检查更新”和“下载并安装”时连接 GitHub；系统安装验证可能访问 Apple。
-菜单栏总量后显示近 5 分钟平均输出 tok/s，不是实时生成速度。
+菜单栏总量后显示近 1 分钟平均输出 tok/s，不是实时生成速度。每 30 秒自动更新；点击“刷新”同时重新读取 Token 总量、额度和速度，已有读取正在进行时会等待后再读一次，并显示“刷新中…”。
+底部使用系统 Swift Charts 展示最近 10 分钟的采样折线，鼠标移入显示对应采样的时间与 tok/s；空缺不插值、不当作零。历史仅保存在内存，退出即清空，无第三方图表依赖。设置、刷新和更新入口收在右上角齿轮内。
+子任务日志中继承的直接父任务信息不会覆盖自身身份；父任务历史仍去重，子任务新输出正常计入总量与速度。
 支持带附加 UUID 的续写日志：使用原会话编号归属，跨文件合并后计算增量并去重，不再显示 `≥` 下限。真正无法安全归属的近期记录、尚无数据或读取失败仍显示 `—`，不会将不完整统计伪装为完整速度。
 额度仅是本地历史记录，无法自动识别换号，也不保证属于当前账号；
 换号后请点击“清除旧额度”。这只隐藏旧记录，不删除日志、不影响 Token 总量。

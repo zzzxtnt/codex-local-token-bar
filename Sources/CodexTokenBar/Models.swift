@@ -106,7 +106,7 @@ struct LocalUsageSnapshot: Sendable {
     let rateLimits: SessionRateLimits?
     let sourceFile: URL
     let quotaTimestamp: Date?
-    /// Output recorded in the last 300 seconds / 300; not decode throughput.
+    /// Output recorded in the last 60 seconds / 60; not decode throughput.
     let averageOutputTokensPerSecond: Double?
     let outputSpeedIsPartial: Bool
 

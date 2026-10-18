@@ -3,13 +3,42 @@ import Testing
 @testable import CodexTokenBar
 
 struct SessionUsageReaderTests {
+    @Test func forkWithInheritedParentMetadataKeepsRecentSpeed() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let parent = "11111111-1111-4111-8111-111111111111"
+        let child = "22222222-2222-4222-8222-222222222222"
+        let replay = tokenEvent(totalInput: 100, cached: 0, output: 300, timestamp: "2026-10-18T00:00:01Z")
+        try write([sessionMeta(id: parent, timestamp: "2026-10-18T00:00:00Z"), replay], id: parent, to: root)
+        try write([sessionMeta(id: child, parentID: parent, timestamp: "2026-10-18T00:01:00Z"),
+                   sessionMeta(id: parent, timestamp: "2026-10-18T00:01:00Z"), replay,
+                   tokenEvent(totalInput: 200, cached: 0, output: 600, timestamp: "2026-10-18T00:02:00Z")], id: child, to: root)
+        let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(
+            now: try #require(CodexJSON.parseDate("2026-10-18T00:02:30Z")))
+        #expect(value.deferredFileCount == 0)
+        #expect(value.averageOutputTokensPerSecond == 5)
+        #expect(value.todayTotal.outputTokens == 600)
+        #expect(value.todayRequestCount == 2)
+        // Only the declared parent may appear as inherited metadata.
+        let foreign = "33333333-3333-4333-8333-333333333333"
+        for extra in [sessionMeta(id: foreign, timestamp: "2026-10-18T00:01:00Z"),
+                      sessionMeta(id: child, parentID: foreign, timestamp: "2026-10-18T00:01:00Z")] {
+            try write([sessionMeta(id: child, parentID: parent, timestamp: "2026-10-18T00:01:00Z"), extra,
+                       tokenEvent(totalInput: 200, cached: 0, output: 600, timestamp: "2026-10-18T00:02:00Z")], id: child, to: root)
+            let conflict = try SessionUsageReader(sessionsRoot: root).dailySnapshot(
+                now: try #require(CodexJSON.parseDate("2026-10-18T00:02:30Z")))
+            #expect(conflict.outputSpeedIsPartial)
+            #expect(conflict.averageOutputTokensPerSecond == nil)
+        }
+    }
     @Test func appendedFileIdentifierKeepsSessionAndMergesContinuation() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let id = "11111111-1111-4111-8111-111111111111"
         let suffix = "22222222-2222-4222-8222-222222222222"
-        let now = try #require(CodexJSON.parseDate("2026-10-16T00:05:00Z"))
+        let now = try #require(CodexJSON.parseDate("2026-10-16T00:04:30Z"))
         let meta = sessionMeta(id: id, timestamp: "2026-10-16T00:00:00Z")
         let first = tokenEvent(totalInput: 100, cached: 0, output: 300, timestamp: "2026-10-16T00:01:00Z")
         let second = tokenEvent(totalInput: 200, cached: 0, output: 600, timestamp: "2026-10-16T00:04:00Z")
@@ -18,14 +47,14 @@ struct SessionUsageReaderTests {
         let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
         #expect(value.deferredFileCount == 0)
         #expect(!value.outputSpeedIsPartial)
-        #expect(value.averageOutputTokensPerSecond == 2)
+        #expect(value.averageOutputTokensPerSecond == 5)
         #expect(value.todayTotal.outputTokens == 600)
         #expect(value.todayRequestCount == 2)
         // A copied prefix must not double count; nor may repeated per-file
         // event indexes discard the continuation's first new request.
         try write([meta, first, second], id: "\(id)_\(suffix)", to: root)
         let copied = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
-        #expect(copied.averageOutputTokensPerSecond == 2)
+        #expect(copied.averageOutputTokensPerSecond == 5)
         #expect(copied.todayRequestCount == 2)
     }
     @Test func decodesLatestTokenEventAndDoesNotDoubleCountCache() throws {
@@ -67,11 +96,11 @@ struct SessionUsageReaderTests {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(
-            now: try #require(CodexJSON.parseDate("2026-10-16T00:04:00Z")), calendar: calendar)
+            now: try #require(CodexJSON.parseDate("2026-10-16T00:03:30Z")), calendar: calendar)
         #expect(value.deferredFileCount == 0)
         #expect(value.todayTotal.outputTokens == 600)
         #expect(value.todayRequestCount == 2)
-        #expect(value.averageOutputTokensPerSecond == 2)
+        #expect(value.averageOutputTokensPerSecond == 5)
     }
 
     @Test func continuationDoesNotBorrowMissingOrConflictingMetadata() throws {
@@ -82,7 +111,7 @@ struct SessionUsageReaderTests {
         let suffix = "22222222-2222-4222-8222-222222222222"
         let event = tokenEvent(totalInput: 100, cached: 0, output: 300, timestamp: "2026-10-16T00:01:00Z")
         try write([sessionMeta(id: id, timestamp: "2026-10-16T00:00:00Z"), event], id: id, to: root)
-        let now = try #require(CodexJSON.parseDate("2026-10-16T00:04:00Z"))
+        let now = try #require(CodexJSON.parseDate("2026-10-16T00:01:30Z"))
         for lines in [[event], [sessionMeta(id: suffix, timestamp: "2026-10-16T00:00:00Z"), event]] {
             try write(lines, id: "\(id)_\(suffix)", to: root)
             let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
@@ -170,9 +199,9 @@ struct SessionUsageReaderTests {
         #expect(snapshot.deferredFileCount == 0)
         #expect(snapshot.averageOutputTokensPerSecond == 0)
         let active = try SessionUsageReader(sessionsRoot: sessions, archivedSessionsRoot: archived)
-            .dailySnapshot(now: try #require(CodexJSON.parseDate("2026-08-29T02:05:00Z")), calendar: calendar)
-        // 19 output tokens, excluding archived copies, repeated snapshots and child replay.
-        #expect(abs(try #require(active.averageOutputTokensPerSecond) - 19.0 / 300) < 0.000001)
+            .dailySnapshot(now: try #require(CodexJSON.parseDate("2026-08-29T02:04:30Z")), calendar: calendar)
+        // Only the child's 4 new output tokens fall in the last minute.
+        #expect(abs(try #require(active.averageOutputTokensPerSecond) - 4.0 / 60) < 0.000001)
     }
 
     @Test func outputSpeedCrossesMidnightAndExpiresWithoutCountingInputOrFutureEvents() throws {
@@ -182,18 +211,18 @@ struct SessionUsageReaderTests {
         let id = "11111111-1111-4111-8111-111111111111"
         try write([
             sessionMeta(id: id, timestamp: "2026-10-14T15:00:00Z"),
-            tokenEvent(totalInput: 1000, cached: 900, output: 900, timestamp: "2026-10-14T15:56:00Z"),
-            tokenEvent(totalInput: 2000, cached: 1800, output: 1200, timestamp: "2026-10-14T15:59:00Z"),
+            tokenEvent(totalInput: 1000, cached: 900, output: 900, timestamp: "2026-10-14T15:59:20Z"),
+            tokenEvent(totalInput: 2000, cached: 1800, output: 1200, timestamp: "2026-10-14T15:59:40Z"),
             tokenEvent(totalInput: 3000, cached: 2700, output: 1800, timestamp: "2026-10-14T16:00:00Z"),
             tokenEvent(totalInput: 4000, cached: 3600, output: 2100, timestamp: "2026-10-14T16:02:00Z")
         ], id: id, to: root)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
         let reader = SessionUsageReader(sessionsRoot: root)
-        let now = try #require(CodexJSON.parseDate("2026-10-14T16:01:00Z"))
+        let now = try #require(CodexJSON.parseDate("2026-10-14T16:00:20Z"))
         let value = try reader.dailySnapshot(now: now, calendar: calendar)
-        // (300 before midnight + 600 after midnight) / 300 seconds. Lower bound excluded.
-        #expect(value.averageOutputTokensPerSecond == 3)
+        // (300 before midnight + 600 after midnight) / 60 seconds. Lower bound excluded.
+        #expect(value.averageOutputTokensPerSecond == 15)
         let idle = try reader.dailySnapshot(now: now.addingTimeInterval(600), calendar: calendar)
         #expect(idle.averageOutputTokensPerSecond == 0)
     }
@@ -226,7 +255,7 @@ struct SessionUsageReaderTests {
                   id: "22222222-2222-4222-8222-222222222222", to: root)
         let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(now: now)
         #expect(value.deferredFileCount == 1)
-        #expect(value.averageOutputTokensPerSecond == 1)
+        #expect(value.averageOutputTokensPerSecond == 5)
         #expect(!value.outputSpeedIsPartial)
         // Same failure pattern as the real logs: a filename/metadata mismatch
         // with recent output must not suppress other safely attributed sessions.
@@ -247,16 +276,16 @@ struct SessionUsageReaderTests {
         let id = "11111111-1111-4111-8111-111111111111"
         try write([sessionMeta(id: id, timestamp: "2026-10-14T15:00:00Z"),
                    tokenEvent(totalInput: 1000, cached: 900, output: 300,
-                              timestamp: "2026-10-14T15:59:00Z")], id: id, to: root)
+                              timestamp: "2026-10-14T15:59:40Z")], id: id, to: root)
         try FileManager.default.setAttributes([.modificationDate:
-            try #require(CodexJSON.parseDate("2026-10-14T15:59:01Z"))],
+            try #require(CodexJSON.parseDate("2026-10-14T15:59:41Z"))],
             ofItemAtPath: root.appendingPathComponent("rollout-\(id).jsonl").path)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
         let value = try SessionUsageReader(sessionsRoot: root).dailySnapshot(
-            now: try #require(CodexJSON.parseDate("2026-10-14T16:01:00Z")), calendar: calendar)
+            now: try #require(CodexJSON.parseDate("2026-10-14T16:00:20Z")), calendar: calendar)
         #expect(value.todayTotal.normalizedTotal == 0)
-        #expect(value.averageOutputTokensPerSecond == 1)
+        #expect(value.averageOutputTokensPerSecond == 5)
     }
 
     @Test func cacheHitRateHandlesEmptyAndMalformedCounts() {

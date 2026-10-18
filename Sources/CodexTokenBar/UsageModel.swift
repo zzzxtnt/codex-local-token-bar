@@ -5,7 +5,13 @@ import ServiceManagement
 @MainActor
 final class UsageModel: ObservableObject {
     @Published private(set) var localUsage: LocalUsageSnapshot?
+    @Published private(set) var speedHistory = SpeedHistory()
+    @Published var showingSettings = false
     @Published private(set) var isRefreshing = false
+    @Published private(set) var manualRefreshCount = 0
+    var isManuallyRefreshing: Bool { manualRefreshCount > 0 }
+    private var tokenReadWaiters: [CheckedContinuation<Void, Never>] = []
+    private var quotaReadWaiters: [CheckedContinuation<Void, Never>] = []
     @Published private(set) var localError: String?
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var launchAtLoginEnabled = false
@@ -55,7 +61,7 @@ final class UsageModel: ObservableObject {
 
     var menuTitle: String {
         guard let localUsage else { return "Codex —" }
-        return "Codex \(TokenFormatter.compact(localUsage.todayTotal.normalizedTotal))，近 5 分钟平均输出 \(speedValue)"
+        return "Codex \(TokenFormatter.compact(localUsage.todayTotal.normalizedTotal))，近 1 分钟平均输出 \(speedValue)"
     }
 
     var speedValue: String {
@@ -85,10 +91,21 @@ final class UsageModel: ObservableObject {
     }
 
     /// Read only usage logs. This data cannot identify the currently signed-in account.
-    func refreshLocalQuota(now: Date = Date()) async {
+    func refreshLocalQuota(now: Date? = nil, waitForCurrent: Bool = false) async {
+        if waitForCurrent {
+            while isReadingQuota {
+                await withCheckedContinuation { quotaReadWaiters.append($0) }
+            }
+        }
         guard !isReadingQuota else { return }
+        let now = now ?? Date()
         isReadingQuota = true
-        defer { isReadingQuota = false }
+        defer {
+            isReadingQuota = false
+            let waiters = quotaReadWaiters
+            quotaReadWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
         let generation = quotaGeneration
         do {
             let reader = readQuota
@@ -140,15 +157,27 @@ final class UsageModel: ObservableObject {
     }
 
     func refresh() async {
-        async let quota: Void = refreshLocalQuota()
-        await refreshTokens()
+        manualRefreshCount += 1
+        defer { manualRefreshCount -= 1 }
+        async let quota: Void = refreshLocalQuota(waitForCurrent: true)
+        await refreshTokens(waitForCurrent: true)
         await quota
     }
 
-    private func refreshTokens() async {
+    private func refreshTokens(waitForCurrent: Bool = false) async {
+        if waitForCurrent {
+            while isRefreshing {
+                await withCheckedContinuation { tokenReadWaiters.append($0) }
+            }
+        }
         guard !isRefreshing else { return }
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer {
+            isRefreshing = false
+            let waiters = tokenReadWaiters
+            tokenReadWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+        }
 
         do {
             let reader = readLocal
@@ -158,8 +187,10 @@ final class UsageModel: ObservableObject {
             localUsage = snapshot
             localError = nil
             lastUpdated = Date()
+            speedHistory.record(snapshot.outputSpeedIsPartial ? nil : snapshot.averageOutputTokensPerSecond, at: Date())
         } catch {
             localError = error.localizedDescription
+            speedHistory.record(nil, at: Date())
         }
     }
 

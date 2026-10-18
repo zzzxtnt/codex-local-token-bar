@@ -80,10 +80,11 @@ struct PopoverLayoutTests {
                     }])
             }, install: { _, _, _ in Issue.record("Layout tests must not install") })
             if state.hasPrefix("update-") { await updater.check() }
+            model.showingSettings = state.hasPrefix("update-") || state == "permission"
             let popover = UsagePopover(model: model, notifications: notifications, updater: updater)
             let layout = NSHostingView(rootView: popover.content.frame(width: UsagePopover.panelWidth))
             let contentHeight = layout.fittingSize.height
-            #expect(contentHeight > 200)
+            #expect(contentHeight > 140)
             if state == "loaded" || state == "expired" {
                 #expect(contentHeight <= 410,
                         "Routine content must fit without scrolling: \(contentHeight)")
@@ -135,6 +136,19 @@ struct PopoverLayoutTests {
 
             if state == "loaded" {
                 let previousHeight = nativePopover.contentSize.height
+                model.showingSettings = true
+                for _ in 0..<30 {
+                    if abs(nativePopover.contentSize.height - previousHeight) > 10 { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                let settingsLayout = NSHostingView(rootView: popover.content.frame(width: UsagePopover.panelWidth))
+                #expect(abs(nativePopover.contentSize.height - settingsLayout.fittingSize.height) <= 1)
+                model.showingSettings = false
+                for _ in 0..<30 {
+                    if abs(nativePopover.contentSize.height - previousHeight) <= 1 { break }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                #expect(abs(nativePopover.contentSize.height - previousHeight) <= 1)
                 // The same mounted controller must shrink after a real model update.
                 model.discardOldQuota(now: now)
                 for _ in 0..<30 {
