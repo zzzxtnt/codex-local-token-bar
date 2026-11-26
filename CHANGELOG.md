@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.12 — 2026-11-26
+
+- Add Antigravity 5-hour and weekly quota display via the locally installed
+  `agy --print /usage --output-format json` CLI (adapted from CC Switch's
+  `subscription_agy.rs`), polling every 5 minutes automatically and on manual
+  refresh or source switch, without reading credentials or making direct HTTP
+  requests.
+- Fix Antigravity output speed staying flat during idle periods: switch from
+  whole-day aggregate speed to the same trailing 60-second output average
+  (`recentOutput / 60`) used by Codex, attributing step completion times with
+  companion `conversations/<id>.db` generation latencies so speed drops to
+  `0.0 tok/s` when idle.
+
 ## 0.1.11 — 2026-11-26
 
 - Add Antigravity (`agy` CLI / IDE / ACP) local token usage and output speed

@@ -52,14 +52,44 @@ struct RateLimitWindow: Codable, Hashable, Sendable {
     }
 }
 
+struct NamedRateLimitWindow: Codable, Hashable, Sendable, Identifiable {
+    let label: String
+    let window: RateLimitWindow
+
+    var id: String { label }
+}
+
 struct SessionRateLimits: Codable, Hashable, Sendable {
     let limitId: String?
     let primary: RateLimitWindow?
     let secondary: RateLimitWindow?
     let planType: String?
+    let additional: [NamedRateLimitWindow]?
+
+    init(
+        limitId: String?,
+        primary: RateLimitWindow?,
+        secondary: RateLimitWindow?,
+        planType: String?,
+        additional: [NamedRateLimitWindow]? = nil
+    ) {
+        self.limitId = limitId
+        self.primary = primary
+        self.secondary = secondary
+        self.planType = planType
+        self.additional = additional
+    }
 
     var isCodexQuota: Bool {
         limitId == nil || limitId == "" || limitId == "codex"
+    }
+
+    var isAntigravityQuota: Bool {
+        limitId == "antigravity"
+    }
+
+    var isTrackedQuota: Bool {
+        isCodexQuota || isAntigravityQuota
     }
 }
 
@@ -162,14 +192,18 @@ enum UsageDataSource: String, CaseIterable, Codable, Identifiable, Sendable {
     }
 
     var supportsLocalQuota: Bool {
-        self == .codex
+        true
+    }
+
+    var quotaRefreshInterval: TimeInterval {
+        switch self {
+        case .codex: 30
+        case .antigravity: 300
+        }
     }
 
     var speedSubtitle: String {
-        switch self {
-        case .codex: "近 1 分钟均值"
-        case .antigravity: "今日请求均速（含首字）"
-        }
+        "近 1 分钟均值"
     }
 }
 
@@ -178,6 +212,9 @@ enum UsageError: LocalizedError {
     case noTokenEvents
     case antigravitySessionsNotFound
     case noAntigravityTokenEvents
+    case antigravityCLIMissing
+    case antigravityQuotaUnavailable
+    case antigravityQuotaTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -185,6 +222,9 @@ enum UsageError: LocalizedError {
         case .noTokenEvents: "尚未找到 Codex token 记录"
         case .antigravitySessionsNotFound: "未找到 Antigravity 本地会话目录"
         case .noAntigravityTokenEvents: "尚未找到 Antigravity token 记录"
+        case .antigravityCLIMissing: "未找到 agy 命令，无法读取 Antigravity 额度"
+        case .antigravityQuotaUnavailable: "未能从 agy 获取额度，请确认已完成登录"
+        case .antigravityQuotaTimedOut: "查询 agy 额度超时，请稍后重试"
         }
     }
 }

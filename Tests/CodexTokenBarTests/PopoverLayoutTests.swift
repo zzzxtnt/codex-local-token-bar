@@ -72,6 +72,14 @@ struct PopoverLayoutTests {
                         String(repeating: "这是一段用于验证长错误说明仍可滚动阅读的测试文本。", count: 30)])
                 }
                 return state == "empty" || state == "read-error" ? nil : record
+            }, readAntigravityQuota: {
+                LocalQuotaRecord(quota: QuotaSnapshot(timestamp: now,
+                    limits: SessionRateLimits(limitId: "antigravity",
+                        primary: RateLimitWindow(usedPercent: 40, windowMinutes: 300,
+                            limitWindowSeconds: 18_000, resetsAt: now.addingTimeInterval(7_200).timeIntervalSince1970, resetAt: nil),
+                        secondary: RateLimitWindow(usedPercent: 10, windowMinutes: 10_080,
+                            limitWindowSeconds: 604_800, resetsAt: now.addingTimeInterval(86_400 * 6).timeIntervalSince1970, resetAt: nil),
+                        planType: nil)), sourceFile: URL(fileURLWithPath: "/usr/local/bin/agy"))
             }, preferences: defaults)
             await model.refresh()
             let notifications = ResetNotificationController(

@@ -63,17 +63,24 @@ struct AntigravityUsageReader: Sendable {
             throw UsageError.noAntigravityTokenEvents
         }
 
+        let speedStart = now.addingTimeInterval(-60)
+        // Include steps that started up to 15 minutes before speedStart so long-running
+        // generations whose completion falls inside the trailing 60s window are attributed
+        // accurately using native conversation DB latency.
+        let timingLookbackStart = speedStart.addingTimeInterval(-900)
+        let selectionCutoff = min(dayStart, speedStart)
+
         let selected = transcripts.filter { entry in
-            latestRelevantModificationDate(for: entry.transcript) >= dayStart
+            latestRelevantModificationDate(for: entry.transcript) >= selectionCutoff
         }
 
         var requestIDs = Set<String>()
+        var speedRequestIDs = Set<String>()
         var dailyFreshInput: UInt64 = 0
         var dailyCacheRead: UInt64 = 0
         var dailyCacheWrite: UInt64 = 0
         var dailyOutput: UInt64 = 0
-        var speedOutputTokens: UInt64 = 0
-        var speedDurationMs: UInt64 = 0
+        var recentOutput: UInt64 = 0
         var latestEventTimestamp: Date?
         var latestSourceFile: URL?
         var latestRequestCounts: TokenCounts?
@@ -84,42 +91,53 @@ struct AntigravityUsageReader: Sendable {
             guard !steps.isEmpty else { continue }
             sawAnyBillableStep = true
 
-            var todaySteps: [ParsedAntigravityStep] = []
-            for step in steps {
-                if let timestamp = step.timestamp {
-                    if latestEventTimestamp == nil || timestamp > latestEventTimestamp! {
-                        latestEventTimestamp = timestamp
-                        latestSourceFile = entry.transcript
-                        latestRequestCounts = step.asTokenCounts
-                    }
-                    if timestamp >= dayStart, timestamp < dayEnd {
-                        let requestID = "agy:\(entry.sessionID):\(step.stepIndex)"
-                        if requestIDs.insert(requestID).inserted {
-                            todaySteps.append(step)
-                            dailyFreshInput = dailyFreshInput.addingClamped(step.freshInput)
-                            dailyCacheRead = dailyCacheRead.addingClamped(step.cacheRead)
-                            dailyCacheWrite = dailyCacheWrite.addingClamped(step.cacheWrite)
-                            dailyOutput = dailyOutput.addingClamped(step.output)
-                        }
-                    }
-                }
+            // Only open the companion SQLite DB for steps close enough to the trailing 60s
+            // window that their completion timestamp could land in (speedStart, now].
+            let timingCandidates = steps.compactMap { step -> UInt64? in
+                guard step.output > 0,
+                      let ts = step.timestamp,
+                      ts >= timingLookbackStart,
+                      ts <= now
+                else { return nil }
+                return step.stepIndex
             }
+            let timings = timingCandidates.isEmpty
+                ? [:]
+                : AntigravityNativeTimingReader.readTimings(
+                    forTranscript: entry.transcript,
+                    stepIndices: timingCandidates
+                )
 
-            let speedCandidateIndices = todaySteps
-                .filter { $0.output >= Self.speedMinOutputTokens }
-                .map(\.stepIndex)
-            guard !speedCandidateIndices.isEmpty else { continue }
+            for step in steps {
+                guard let timestamp = step.timestamp else { continue }
+                let completedAt: Date
+                if let timing = timings[step.stepIndex] {
+                    let finish = timestamp.addingTimeInterval(Double(timing.latencyMs) / 1_000.0)
+                    // Completed steps cannot finish in the future; clamp tiny clock skew to now.
+                    completedAt = timestamp <= now ? min(finish, now) : finish
+                } else {
+                    completedAt = timestamp
+                }
 
-            let timings = AntigravityNativeTimingReader.readTimings(
-                forTranscript: entry.transcript,
-                stepIndices: speedCandidateIndices
-            )
-            for step in todaySteps where step.output >= Self.speedMinOutputTokens {
-                guard let timing = timings[step.stepIndex],
-                      Self.isSpeedEligible(outputTokens: step.output, latencyMs: timing.latencyMs)
-                else { continue }
-                speedOutputTokens = speedOutputTokens.addingClamped(step.output)
-                speedDurationMs = speedDurationMs.addingClamped(UInt64(timing.latencyMs))
+                if latestEventTimestamp == nil || completedAt > latestEventTimestamp! {
+                    latestEventTimestamp = completedAt
+                    latestSourceFile = entry.transcript
+                    latestRequestCounts = step.asTokenCounts
+                }
+
+                let requestID = "agy:\(entry.sessionID):\(step.stepIndex)"
+                if completedAt > speedStart, completedAt <= now,
+                   speedRequestIDs.insert(requestID).inserted {
+                    recentOutput = recentOutput.addingClamped(step.output)
+                }
+
+                if timestamp >= dayStart, timestamp < dayEnd,
+                   requestIDs.insert(requestID).inserted {
+                    dailyFreshInput = dailyFreshInput.addingClamped(step.freshInput)
+                    dailyCacheRead = dailyCacheRead.addingClamped(step.cacheRead)
+                    dailyCacheWrite = dailyCacheWrite.addingClamped(step.cacheWrite)
+                    dailyOutput = dailyOutput.addingClamped(step.output)
+                }
             }
         }
 
@@ -149,10 +167,6 @@ struct AntigravityUsageReader: Sendable {
             totalTokens: totalTokens
         )
 
-        let averageSpeed: Double? = speedDurationMs > 0
-            ? (Double(speedOutputTokens) * 1_000.0) / Double(speedDurationMs)
-            : nil
-
         return LocalUsageSnapshot(
             timestamp: latestEventTimestamp ?? now,
             todayTotal: todayTotal,
@@ -165,7 +179,7 @@ struct AntigravityUsageReader: Sendable {
             rateLimits: nil,
             sourceFile: latestSourceFile ?? transcripts[0].transcript,
             quotaTimestamp: nil,
-            averageOutputTokensPerSecond: averageSpeed,
+            averageOutputTokensPerSecond: Double(recentOutput) / 60.0,
             outputSpeedIsPartial: false
         )
     }

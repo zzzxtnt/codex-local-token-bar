@@ -83,11 +83,14 @@ CC Switch's Antigravity (`agy`) local session-usage and speed rules:
    `output_tokens` as total output (already including thinking tokens), so
    `real_total = input + cache_read + cache_write + output` and
    `cache_hit_rate = cache_read / (input + cache_read + cache_write)`.
-4. Read per-generation timings (`first_token + streaming` duration) read-only from
-   companion `conversations/<id>.db` SQLite databases, and compute today's weighted
-   average output speed (`SUM(output_tokens) / SUM(latency_s)`) over eligible steps
-   (`output_tokens ≥ 200`, `latency ≥ 1 s`, `≤ 10,000 tok/s`). Antigravity local logs
-   do not include quota windows, so the Codex local quota section is hidden in this mode.
+4. Compute trailing 1-minute output speed (`recentOutput / 60`) using the same
+   60-second window as Codex, using companion `conversations/<id>.db` generation
+   durations (`first_token + streaming`) to determine each step's completion time so
+   speed drops to `0.0 tok/s` when idle.
+5. Read Antigravity 5-hour and weekly quota windows by invoking the locally
+   installed `agy --print /usage --output-format json` command (every 5 minutes
+   and on manual refresh or source switch), matching CC Switch's `subscription_agy.rs`
+   without reading credentials or making direct HTTP requests from this app.
 
 This number is a local activity estimate. It is **not** an invoice, API billing
 meter, subscription quota, or remaining-credit counter.

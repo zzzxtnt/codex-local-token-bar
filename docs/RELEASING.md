@@ -44,8 +44,8 @@ Then create the complete release. `RELEASE_VERSION` must not include the
 leading `v` used by the Git tag:
 
 ```sh
-RELEASE_VERSION=0.1.11 \
-BUILD_NUMBER=15 \
+RELEASE_VERSION=0.1.12 \
+BUILD_NUMBER=16 \
 SIGNING_IDENTITY="Developer ID Application: Your Organization (TEAMID)" \
 NOTARY_PROFILE=codex-token-bar \
 ./scripts/release-macos.sh

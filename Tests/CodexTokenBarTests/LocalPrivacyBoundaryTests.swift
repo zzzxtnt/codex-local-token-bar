@@ -11,11 +11,19 @@ struct LocalPrivacyBoundaryTests {
         for file in files {
             let source = try String(contentsOf: file, encoding: .utf8)
             let updaterFiles = ["UpdateRelease.swift", "UpdateInstaller.swift", "UpdateController.swift"]
+            let processAllowedFiles = updaterFiles + ["AntigravityQuotaReader.swift"]
             let forbiddenEverywhere = ["auth.json", "access_token", "refresh_token", "SecItemCopyMatching"]
-            let forbiddenInStatistics = ["URLSession", "URLRequest", "import Network", "import Security", "Process()"]
-            for forbidden in forbiddenEverywhere + (updaterFiles.contains(file.lastPathComponent) ? [] : forbiddenInStatistics) {
-                let violatesBoundary = source.contains(forbidden)
-                #expect(!violatesBoundary, "Privacy boundary: \(file.lastPathComponent) contains \(forbidden)")
+            let forbiddenNetworkOrSecurity = ["URLSession", "URLRequest", "import Network", "import Security"]
+            var forbidden = forbiddenEverywhere
+            if !updaterFiles.contains(file.lastPathComponent) {
+                forbidden.append(contentsOf: forbiddenNetworkOrSecurity)
+            }
+            if !processAllowedFiles.contains(file.lastPathComponent) {
+                forbidden.append("Process()")
+            }
+            for token in forbidden {
+                let violatesBoundary = source.contains(token)
+                #expect(!violatesBoundary, "Privacy boundary: \(file.lastPathComponent) contains \(token)")
             }
         }
     }

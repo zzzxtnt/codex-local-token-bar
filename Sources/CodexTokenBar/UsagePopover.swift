@@ -55,21 +55,13 @@ struct UsagePopover: View {
                     .frame(maxWidth: .infinity, minHeight: 76)
             }
 
-            if model.supportsLocalQuota {
-                Divider()
-                quotaSection
-            }
+            Divider()
+            quotaSection
             Divider()
             SpeedTrendView(
                 history: model.speedHistory,
                 currentValue: model.speedValue,
-                subtitle: model.dataSource.speedSubtitle,
-                accessibilitySummary: model.dataSource == .codex
-                    ? "每个点为近 1 分钟平均输出"
-                    : "每个点为今日符合条件请求的平均输出速度",
-                helpText: model.dataSource == .codex
-                    ? "仅记录本次运行的本地采样。每 30 秒自动采样，手动刷新也会采样；断线表示读取失败或采样中断，退出即清空。"
-                    : "仅记录本次运行的本地采样。按 CC Switch 口径读取本地对话库计时，统计输出 ≥ 200 token 且耗时 ≥ 1 秒的今日请求均速（含首字）；退出即清空。"
+                subtitle: model.dataSource.speedSubtitle
             )
         }
         .padding(.horizontal, 12)
@@ -133,17 +125,19 @@ struct UsagePopover: View {
                 Text("已用额度")
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
-                Text("账号未确认")
+                Text(model.dataSource == .codex ? "账号未确认" : "agy /usage")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             if let notice = model.resetNotice {
                 Text(notice.message + " · " + notice.timestamp.formatted(date: .omitted, time: .shortened))
                     .font(.caption).foregroundStyle(.green)
             }
-            Text("非实时额度；切换账号后请清除旧记录。")
+            Text(model.dataSource == .codex
+                ? "非实时额度；切换账号后请清除旧记录。"
+                : "通过本机 agy /usage 查询，每 5 分钟自动更新。")
                 .font(.caption2).foregroundStyle(.secondary)
 
-            if model.effectivePrimaryWindow == nil && model.effectiveSecondaryWindow == nil {
+            if model.effectivePrimaryWindow == nil && model.effectiveSecondaryWindow == nil && model.additionalWindows.isEmpty {
                 Text(model.quotaMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -153,6 +147,9 @@ struct UsagePopover: View {
                 }
                 if let secondary = model.effectiveSecondaryWindow {
                     QuotaRow(window: secondary, fallbackName: "次窗口")
+                }
+                ForEach(model.additionalWindows) { item in
+                    QuotaRow(window: item.window, fallbackName: item.label, explicitName: item.label)
                 }
             }
             HStack {
@@ -237,9 +234,7 @@ struct UsagePopover: View {
                     Label(model.isManuallyRefreshing ? "刷新中…" : "刷新", systemImage: "arrow.clockwise")
                 }
                 .disabled(model.isManuallyRefreshing)
-                .help(model.supportsLocalQuota
-                    ? "重新读取本地 Token 总量、额度和近 1 分钟输出速度"
-                    : "重新读取 Antigravity 本地 Token 总量与今日平均输出速度")
+                .help("重新读取本地 Token 总量、额度和近 1 分钟输出速度")
 
                 Spacer()
 
@@ -302,6 +297,7 @@ private struct MiniMetric: View {
 private struct QuotaRow: View {
     let window: RateLimitWindow
     let fallbackName: String
+    var explicitName: String? = nil
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -315,7 +311,7 @@ private struct QuotaRow: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(windowName)
-                    .frame(width: 42, alignment: .leading)
+                    .frame(minWidth: 42, alignment: .leading)
                 if !expired && window.usedPercent != nil {
                     ProgressView(value: used, total: 100)
                         .tint(color(for: used))
@@ -345,6 +341,7 @@ private struct QuotaRow: View {
     }
 
     private var windowName: String {
+        if let explicitName { return explicitName }
         guard let seconds = window.durationSeconds else { return fallbackName }
         if seconds == 18_000 { return "5 小时" }
         if seconds == 604_800 { return "7 天" }

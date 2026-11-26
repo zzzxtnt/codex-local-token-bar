@@ -46,7 +46,7 @@ struct QuotaResetDetector {
     mutating func clear() { self = Self() }
 
     mutating func observe(_ snapshot: QuotaSnapshot, source: String) -> QuotaResetNotice? {
-        guard snapshot.limits.isCodexQuota else { return nil }
+        guard snapshot.limits.isTrackedQuota else { return nil }
         guard self.source == source, let previous,
               previous.limits.planType == snapshot.limits.planType,
               snapshot.timestamp.timeIntervalSince(previous.timestamp) <= 86_400 else {
