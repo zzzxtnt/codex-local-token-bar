@@ -44,6 +44,9 @@ struct SpeedHistory {
 struct SpeedTrendView: View {
     let history: SpeedHistory
     let currentValue: String
+    var subtitle: String = "近 1 分钟均值"
+    var accessibilitySummary: String = "每个点为近 1 分钟平均输出"
+    var helpText: String = "仅记录本次运行的本地采样。每 30 秒自动采样，手动刷新也会采样；断线表示读取失败或采样中断，退出即清空。"
     @State private var hoveredDate: Date?
 
     var body: some View {
@@ -69,7 +72,7 @@ struct SpeedTrendView: View {
                     Spacer(minLength: 2)
                     Text(selection.rate.map { String(format: "%.1f tok/s", $0) } ?? "该次采样不可用")
                 } else {
-                    Text("近 1 分钟均值")
+                    Text(subtitle)
                     Spacer(minLength: 2)
                     Text(selectionDate == nil ? "移入查看数值" : "此处无采样")
                 }
@@ -135,7 +138,7 @@ struct SpeedTrendView: View {
             }.font(.system(size: 9)).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("输出速度折线表，最近 10 分钟，每个点为近 1 分钟平均输出，当前 \(currentValue)")
-        .help("仅记录本次运行的本地采样。每 30 秒自动采样，手动刷新也会采样；断线表示读取失败或采样中断，退出即清空。")
+        .accessibilityLabel("输出速度折线表，最近 10 分钟，\(accessibilitySummary)，当前 \(currentValue)")
+        .help(helpText)
     }
 }

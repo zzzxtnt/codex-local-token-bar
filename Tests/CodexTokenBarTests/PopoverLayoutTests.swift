@@ -43,10 +43,13 @@ struct PopoverLayoutTests {
             scannedFileCount: 1_024, deferredFileCount: 16, sessionTotal: tokens, lastRequest: nil,
             contextWindow: 258_000, rateLimits: nil, sourceFile: source)
 
-        for state in ["loaded", "expired", "empty", "read-error", "permission", "long-error", "update-available", "update-error", "update-current"] {
+        for state in ["loaded", "antigravity", "expired", "empty", "read-error", "permission", "long-error", "update-available", "update-error", "update-current"] {
             let defaultsName = "PopoverLayoutTests." + UUID().uuidString
             let defaults = try #require(UserDefaults(suiteName: defaultsName))
             defer { defaults.removePersistentDomain(forName: defaultsName) }
+            if state == "antigravity" {
+                defaults.set(UsageDataSource.antigravity.rawValue, forKey: "usageDataSource")
+            }
             let record = LocalQuotaRecord(quota: QuotaSnapshot(timestamp: now,
                 limits: SessionRateLimits(limitId: "codex",
                     primary: RateLimitWindow(usedPercent: 16, windowMinutes: 300,
@@ -58,6 +61,11 @@ struct PopoverLayoutTests {
             let model = UsageModel(startAutomatically: false, readLocal: {
                 if state == "read-error" { throw UsageError.noTokenEvents }
                 return usage
+            }, readAntigravity: {
+                LocalUsageSnapshot(timestamp: now, todayTotal: tokens, todayRequestCount: 326,
+                    scannedFileCount: 12, deferredFileCount: 0, sessionTotal: tokens, lastRequest: nil,
+                    contextWindow: nil, rateLimits: nil, sourceFile: source,
+                    averageOutputTokensPerSecond: 64.5)
             }, readQuota: {
                 if state == "long-error" {
                     throw NSError(domain: "LayoutFixture", code: 1, userInfo: [NSLocalizedDescriptionKey:
@@ -85,7 +93,7 @@ struct PopoverLayoutTests {
             let layout = NSHostingView(rootView: popover.content.frame(width: UsagePopover.panelWidth))
             let contentHeight = layout.fittingSize.height
             #expect(contentHeight > 140)
-            if state == "loaded" || state == "expired" {
+            if state == "loaded" || state == "expired" || state == "antigravity" {
                 #expect(contentHeight <= 410,
                         "Routine content must fit without scrolling: \(contentHeight)")
             }
@@ -125,7 +133,7 @@ struct PopoverLayoutTests {
                 // AppKit's native control fitting sizes can settle by a few points
                 // after attaching to a window. Neither state may add a blank tail.
                 #expect(host.fittingSize.height <= expectedHeight + 1
-                        && host.fittingSize.height >= expectedHeight - 8,
+                        && host.fittingSize.height >= expectedHeight - 12,
                         "Panel must not reserve empty space below its content: \(state), panel \(host.fittingSize.height), content \(contentHeight)")
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)

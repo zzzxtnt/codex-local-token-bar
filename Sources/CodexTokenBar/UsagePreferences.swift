@@ -1,6 +1,68 @@
 import SwiftUI
 
 /// Presentation only: permissions and persistence remain owned by the existing controllers.
+struct DataSourcePreference: View {
+    @Binding var dataSource: UsageDataSource
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "tray.2")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+                Text("统计数据源")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            HStack(spacing: 2) {
+                ForEach(UsageDataSource.allCases) { source in
+                    let isSelected = dataSource == source
+                    Button {
+                        dataSource = source
+                    } label: {
+                        Text(source.displayName)
+                            .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? .primary : .secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                            .background {
+                                if isSelected {
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .fill(colorScheme == .dark
+                                            ? Color.white.opacity(0.14)
+                                            : Color(nsColor: .controlBackgroundColor))
+                                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.08),
+                                                radius: 1, y: 0.5)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                }
+            }
+            .padding(2)
+            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("统计数据源")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(.primary.opacity(0.06), lineWidth: 0.5)
+                .allowsHitTesting(false)
+        }
+        .help("切换菜单栏与面板统计的本地数据源（Codex 或 Antigravity）。")
+    }
+}
+
+/// Presentation only: permissions and persistence remain owned by the existing controllers.
 struct UsagePreferences: View {
     @Binding var resetNotificationsEnabled: Bool
     let notificationMessage: String

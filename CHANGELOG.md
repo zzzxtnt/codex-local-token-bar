@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.11 — 2026-11-26
+
+- Add Antigravity (`agy` CLI / IDE / ACP) local token usage and output speed
+  statistics adapted from CC Switch's `session_usage_agy.rs` and `usage_stats.rs`.
+  Reads local `transcript_full.jsonl` logs and companion `conversations/<id>.db`
+  generation timings (first-token + streaming latency, weighted average over
+  today's steps with ≥ 200 output tokens and ≥ 1 s latency) without credentials,
+  subprocesses, or network access.
+- Reuse the existing menu-bar and popover UI to display Antigravity totals,
+  input/output/request metrics, cache hit rate, and speed trend; hide Codex-only
+  local quota windows when viewing Antigravity.
+- Add a persisted **统计数据源** (Codex / Antigravity) segmented switcher in
+  in-panel Settings, with generation-guarded refreshes and independent per-source
+  speed histories.
+
 ## 0.1.10 — 2026-10-18
 
 - Replace the hand-drawn trend with native Swift Charts, pointer selection,

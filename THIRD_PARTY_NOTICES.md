@@ -1,9 +1,11 @@
 # Third-party notices
 
-This application adapts the Codex session-usage semantics from:
+This application adapts the Codex and Antigravity session-usage semantics from:
 
 - CC Switch: https://github.com/farion1231/cc-switch
-- Upstream revision inspected: [`3217f72596f2d1c0f879f0a05f83803825d9809f`](https://github.com/farion1231/cc-switch/commit/3217f72596f2d1c0f879f0a05f83803825d9809f)
+- Upstream revisions inspected:
+  - Codex: [`3217f72596f2d1c0f879f0a05f83803825d9809f`](https://github.com/farion1231/cc-switch/commit/3217f72596f2d1c0f879f0a05f83803825d9809f)
+  - Antigravity (`agy`): [`de14050163aca0d8341c0b66f25c8af2d65e268a`](https://github.com/farion1231/cc-switch/commit/de14050163aca0d8341c0b66f25c8af2d65e268a)
 
 CC Switch is distributed under the MIT License:
 

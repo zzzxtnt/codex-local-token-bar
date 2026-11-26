@@ -141,14 +141,50 @@ struct LocalUsageSnapshot: Sendable {
     }
 }
 
+enum UsageDataSource: String, CaseIterable, Codable, Identifiable, Sendable {
+    case codex
+    case antigravity
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .codex: "Codex"
+        case .antigravity: "Antigravity"
+        }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .codex: "Codex Token"
+        case .antigravity: "Antigravity Token"
+        }
+    }
+
+    var supportsLocalQuota: Bool {
+        self == .codex
+    }
+
+    var speedSubtitle: String {
+        switch self {
+        case .codex: "近 1 分钟均值"
+        case .antigravity: "今日请求均速（含首字）"
+        }
+    }
+}
+
 enum UsageError: LocalizedError {
     case sessionsNotFound
     case noTokenEvents
+    case antigravitySessionsNotFound
+    case noAntigravityTokenEvents
 
     var errorDescription: String? {
         switch self {
         case .sessionsNotFound: "未找到 ~/.codex/sessions"
         case .noTokenEvents: "尚未找到 Codex token 记录"
+        case .antigravitySessionsNotFound: "未找到 Antigravity 本地会话目录"
+        case .noAntigravityTokenEvents: "尚未找到 Antigravity token 记录"
         }
     }
 }

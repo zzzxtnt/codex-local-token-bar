@@ -3,8 +3,8 @@
 [![CI](https://github.com/zzzxtnt/codex-local-token-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/zzzxtnt/codex-local-token-bar/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A small native macOS menu bar app that shows **today's Codex token usage** from
-the local Codex session logs.
+A small native macOS menu bar app that shows **today's Codex or Antigravity token usage**
+from local session logs, with an in-panel Settings switch between the two data sources.
 
 It is designed for one job: make the total visible without keeping CC Switch or
 another dashboard open.
@@ -69,6 +69,25 @@ Codex Token Bar follows the Codex session-usage rules adapted from
    `input_tokens`, so the headline total is `input + output`.
 6. Calculate cache hit rate as `cached_input_tokens / input_tokens`, matching
    CC Switch's cache-read / cacheable-input definition for Codex data.
+
+When switched to **Antigravity** in Settings (**统计数据源**), Codex Token Bar follows
+CC Switch's Antigravity (`agy`) local session-usage and speed rules:
+
+1. Scan `transcript_full.jsonl` files under `~/.gemini/antigravity-cli/brain`,
+   `~/.gemini/antigravity/brain`, `~/.gemini/antigravity-acp/brain`, CC Switch's
+   `~/.cc-switch/agy/*/antigravity-cli/brain`, and T3 Code ACP roots (first root wins
+   per session ID, including subagent transcripts).
+2. Deduplicate rewritten steps by `step_index` (latest record wins) and sum completed
+   (`PLANNER_RESPONSE` / `DONE`) steps within the current local calendar day.
+3. Treat Antigravity's `input_tokens` as fresh input (excluding cache) and
+   `output_tokens` as total output (already including thinking tokens), so
+   `real_total = input + cache_read + cache_write + output` and
+   `cache_hit_rate = cache_read / (input + cache_read + cache_write)`.
+4. Read per-generation timings (`first_token + streaming` duration) read-only from
+   companion `conversations/<id>.db` SQLite databases, and compute today's weighted
+   average output speed (`SUM(output_tokens) / SUM(latency_s)`) over eligible steps
+   (`output_tokens ≥ 200`, `latency ≥ 1 s`, `≤ 10,000 tok/s`). Antigravity local logs
+   do not include quota windows, so the Codex local quota section is hidden in this mode.
 
 This number is a local activity estimate. It is **not** an invoice, API billing
 meter, subscription quota, or remaining-credit counter.

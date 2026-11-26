@@ -53,7 +53,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         controller.attach(to: popover)
 
+        model.$dataSource
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateButton() }
+            .store(in: &observations)
         model.$localUsage
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateButton() }
+            .store(in: &observations)
+        model.$localError
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateButton() }
             .store(in: &observations)
@@ -93,9 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func updateButton() {
         guard let button = statusItem?.button else { return }
         button.title = " \(model.statusBarValue)"
-        button.toolTip = model.localUsage.map {
-            "Codex 今日合计：\(TokenFormatter.exact($0.todayTotal.normalizedTotal)) tokens\n近 1 分钟平均输出：\(model.speedValue)\n按本地记录统计，每 30 秒自动更新；点击刷新会重新读取总量、额度和速度。包含空闲及工具等待，不是实时生成速度。— 表示读取失败、尚无数据或近期记录无法安全归属。"
-        } ?? "Codex Token Bar 正在读取数据"
+        button.toolTip = model.statusBarTooltip
         button.setAccessibilityLabel(model.menuTitle)
     }
 

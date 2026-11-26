@@ -51,14 +51,26 @@ struct UsagePopover: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 76)
             } else {
-                ProgressView("正在读取 Codex token…")
+                ProgressView("正在读取 \(model.dataSource.displayName) token…")
                     .frame(maxWidth: .infinity, minHeight: 76)
             }
 
+            if model.supportsLocalQuota {
+                Divider()
+                quotaSection
+            }
             Divider()
-            quotaSection
-            Divider()
-            SpeedTrendView(history: model.speedHistory, currentValue: model.speedValue)
+            SpeedTrendView(
+                history: model.speedHistory,
+                currentValue: model.speedValue,
+                subtitle: model.dataSource.speedSubtitle,
+                accessibilitySummary: model.dataSource == .codex
+                    ? "每个点为近 1 分钟平均输出"
+                    : "每个点为今日符合条件请求的平均输出速度",
+                helpText: model.dataSource == .codex
+                    ? "仅记录本次运行的本地采样。每 30 秒自动采样，手动刷新也会采样；断线表示读取失败或采样中断，退出即清空。"
+                    : "仅记录本次运行的本地采样。按 CC Switch 口径读取本地对话库计时，统计输出 ≥ 200 token 且耗时 ≥ 1 秒的今日请求均速（含首字）；退出即清空。"
+            )
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -67,7 +79,7 @@ struct UsagePopover: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("Codex Token")
+            Text(model.dataSource.shortTitle)
                 .font(.system(size: 13, weight: .semibold))
             Text("本地统计")
                 .font(.caption2).foregroundStyle(.secondary)
@@ -168,6 +180,12 @@ struct UsagePopover: View {
                 Button(action: onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).accessibilityLabel("关闭面板")
             }
+            DataSourcePreference(
+                dataSource: Binding(
+                    get: { model.dataSource },
+                    set: { value in Task { await model.switchDataSource(value) } }
+                )
+            )
             UsagePreferences(
                 resetNotificationsEnabled: Binding(
                     get: { notifications.enabled },
@@ -219,7 +237,9 @@ struct UsagePopover: View {
                     Label(model.isManuallyRefreshing ? "刷新中…" : "刷新", systemImage: "arrow.clockwise")
                 }
                 .disabled(model.isManuallyRefreshing)
-                .help("重新读取本地 Token 总量、额度和近 1 分钟输出速度")
+                .help(model.supportsLocalQuota
+                    ? "重新读取本地 Token 总量、额度和近 1 分钟输出速度"
+                    : "重新读取 Antigravity 本地 Token 总量与今日平均输出速度")
 
                 Spacer()
 

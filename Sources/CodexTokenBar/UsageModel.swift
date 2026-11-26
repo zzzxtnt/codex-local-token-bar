@@ -4,12 +4,14 @@ import ServiceManagement
 
 @MainActor
 final class UsageModel: ObservableObject {
+    @Published private(set) var dataSource: UsageDataSource
     @Published private(set) var localUsage: LocalUsageSnapshot?
     @Published private(set) var speedHistory = SpeedHistory()
     @Published var showingSettings = false
     @Published private(set) var isRefreshing = false
     @Published private(set) var manualRefreshCount = 0
     var isManuallyRefreshing: Bool { manualRefreshCount > 0 }
+    var supportsLocalQuota: Bool { dataSource.supportsLocalQuota }
     private var tokenReadWaiters: [CheckedContinuation<Void, Never>] = []
     private var quotaReadWaiters: [CheckedContinuation<Void, Never>] = []
     @Published private(set) var localError: String?
@@ -20,22 +22,33 @@ final class UsageModel: ObservableObject {
     @Published private(set) var quotaMessage = "正在读取本地额度记录…"
     @Published private(set) var resetNotice: QuotaResetNotice?
     private var resetDetector = QuotaResetDetector()
+    private var speedHistories: [UsageDataSource: SpeedHistory] = [:]
     private var refreshLoop: Task<Void, Never>?
     private var quotaLoop: Task<Void, Never>?
     private var isReadingQuota = false
+    private var sourceGeneration = UUID()
     private var quotaGeneration = UUID()
     private var ignoreQuotaThrough: Date?
     private let preferences: UserDefaults
     private let readLocal: @Sendable () throws -> LocalUsageSnapshot
+    private let readAntigravity: @Sendable () throws -> LocalUsageSnapshot
     private let readQuota: @Sendable () throws -> LocalQuotaRecord?
 
     init(startAutomatically: Bool = true,
          readLocal: @escaping @Sendable () throws -> LocalUsageSnapshot = { try SessionUsageReader().dailySnapshot() },
+         readAntigravity: @escaping @Sendable () throws -> LocalUsageSnapshot = { try AntigravityUsageReader().dailySnapshot() },
          readQuota: @escaping @Sendable () throws -> LocalQuotaRecord? = { try SessionUsageReader().latestQuotaRecord() },
          preferences: UserDefaults = .standard) {
         self.readLocal = readLocal
+        self.readAntigravity = readAntigravity
         self.readQuota = readQuota
         self.preferences = preferences
+        let initialSource = preferences.string(forKey: "usageDataSource")
+            .flatMap(UsageDataSource.init(rawValue:)) ?? .codex
+        self.dataSource = initialSource
+        if !initialSource.supportsLocalQuota {
+            self.quotaMessage = "Antigravity 本地日志不包含额度记录"
+        }
         if let cutoff = preferences.object(forKey: "ignoreQuotaThrough") as? Double {
             ignoreQuotaThrough = Date(timeIntervalSince1970: cutoff)
         }
@@ -59,9 +72,49 @@ final class UsageModel: ObservableObject {
         quotaLoop?.cancel()
     }
 
+    func setDataSource(_ newSource: UsageDataSource) {
+        guard newSource != dataSource else { return }
+        speedHistories[dataSource] = speedHistory
+        dataSource = newSource
+        preferences.set(newSource.rawValue, forKey: "usageDataSource")
+        sourceGeneration = UUID()
+        quotaGeneration = UUID()
+        localUsage = nil
+        localError = nil
+        lastUpdated = nil
+        clearQuotaState()
+        quotaMessage = newSource.supportsLocalQuota ? "正在读取本地额度记录…" : "Antigravity 本地日志不包含额度记录"
+        speedHistory = speedHistories[newSource] ?? SpeedHistory()
+    }
+
+    func switchDataSource(_ newSource: UsageDataSource) async {
+        guard newSource != dataSource else { return }
+        setDataSource(newSource)
+        await refresh()
+    }
+
     var menuTitle: String {
-        guard let localUsage else { return "Codex —" }
-        return "Codex \(TokenFormatter.compact(localUsage.todayTotal.normalizedTotal))，近 1 分钟平均输出 \(speedValue)"
+        guard let localUsage else { return "\(dataSource.displayName) —" }
+        let total = TokenFormatter.compact(localUsage.todayTotal.normalizedTotal)
+        switch dataSource {
+        case .codex:
+            return "Codex \(total)，近 1 分钟平均输出 \(speedValue)"
+        case .antigravity:
+            return "Antigravity \(total)，今日平均输出速度 \(speedValue)"
+        }
+    }
+
+    var statusBarTooltip: String {
+        guard let localUsage else {
+            return "\(dataSource.shortTitle) Bar 正在读取数据"
+        }
+        let exactTotal = TokenFormatter.exact(localUsage.todayTotal.normalizedTotal)
+        switch dataSource {
+        case .codex:
+            return "Codex 今日合计：\(exactTotal) tokens\n近 1 分钟平均输出：\(speedValue)\n按本地记录统计，每 30 秒自动更新；点击刷新会重新读取总量、额度和速度。包含空闲及工具等待，不是实时生成速度。— 表示读取失败、尚无数据或近期记录无法安全归属。"
+        case .antigravity:
+            return "Antigravity 今日合计：\(exactTotal) tokens\n今日平均输出速度：\(speedValue)\n按本地会话日志与原生对话库统计，每 30 秒自动更新；输出 ≥ 200 token 且耗时 ≥ 1 秒的今日请求计入速度（含首字）。— 表示读取失败或尚无可用计时样本。"
+        }
     }
 
     var speedValue: String {
@@ -92,12 +145,17 @@ final class UsageModel: ObservableObject {
 
     /// Read only usage logs. This data cannot identify the currently signed-in account.
     func refreshLocalQuota(now: Date? = nil, waitForCurrent: Bool = false) async {
+        guard dataSource.supportsLocalQuota else {
+            clearQuotaState()
+            quotaMessage = "Antigravity 本地日志不包含额度记录"
+            return
+        }
         if waitForCurrent {
             while isReadingQuota {
                 await withCheckedContinuation { quotaReadWaiters.append($0) }
             }
         }
-        guard !isReadingQuota else { return }
+        guard !isReadingQuota, dataSource.supportsLocalQuota else { return }
         let now = now ?? Date()
         isReadingQuota = true
         defer {
@@ -110,7 +168,7 @@ final class UsageModel: ObservableObject {
         do {
             let reader = readQuota
             let record = try await Task.detached(priority: .utility) { try reader() }.value
-            guard generation == quotaGeneration else { return }
+            guard generation == quotaGeneration, dataSource.supportsLocalQuota else { return }
             guard let record,
                   record.quota.timestamp <= now.addingTimeInterval(5),
                   ignoreQuotaThrough.map({ record.quota.timestamp > $0 }) ?? true else {
@@ -135,7 +193,7 @@ final class UsageModel: ObservableObject {
                 resetDetector.clear()
             }
         } catch {
-            guard generation == quotaGeneration else { return }
+            guard generation == quotaGeneration, dataSource.supportsLocalQuota else { return }
             clearQuotaState()
             quotaMessage = "本地额度读取失败：\(error.localizedDescription)"
         }
@@ -179,18 +237,24 @@ final class UsageModel: ObservableObject {
             waiters.forEach { $0.resume() }
         }
 
+        let activeSource = dataSource
+        let generation = sourceGeneration
+        let reader = activeSource == .codex ? readLocal : readAntigravity
         do {
-            let reader = readLocal
             let snapshot = try await Task.detached(priority: .utility) {
                 try reader()
             }.value
+            guard generation == sourceGeneration else { return }
             localUsage = snapshot
             localError = nil
             lastUpdated = Date()
             speedHistory.record(snapshot.outputSpeedIsPartial ? nil : snapshot.averageOutputTokensPerSecond, at: Date())
+            speedHistories[activeSource] = speedHistory
         } catch {
+            guard generation == sourceGeneration else { return }
             localError = error.localizedDescription
             speedHistory.record(nil, at: Date())
+            speedHistories[activeSource] = speedHistory
         }
     }
 
